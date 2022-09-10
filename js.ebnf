@@ -1,0 +1,4 @@
+Start = A | B;
+A = "+" Start;
+B = "+" b;
+b = "1";
