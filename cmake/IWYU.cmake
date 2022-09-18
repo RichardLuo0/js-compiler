@@ -1,0 +1,7 @@
+find_program(IWYU_PATH NAMES include-what-you-use iwyu)
+if(NOT IWYU_PATH)
+  message("Ignoring include-what-you-use because it is not found in the path")
+else()
+  set(CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
+  set(CMAKE_C_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
+endif()

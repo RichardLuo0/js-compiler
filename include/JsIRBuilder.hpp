@@ -5,21 +5,22 @@
 
 #include <memory>
 
-#include "Parser.hpp"
+#include "JsParser.hpp"
 
 namespace JsCompiler {
 using namespace llvm;
+using namespace GeneratedParser;
 
 class JsIRBuilder {
  private:
-  const std::unique_ptr<Parser> parser;
+  const std::unique_ptr<JsParser> parser;
 
   LLVMContext context;
   const IRBuilder<>& irBuilder;
 
  public:
-  explicit JsIRBuilder(std::unique_ptr<Parser> parser)
-      : irBuilder(std::move(IRBuilder<>(context))), parser(std::move(parser)){};
+  explicit JsIRBuilder(std::unique_ptr<JsParser> parser)
+      : parser(std::move(parser)), irBuilder(std::move(IRBuilder<>(context))){};
 
   void build() { parser->parseExpression()->codegen(); }
 };

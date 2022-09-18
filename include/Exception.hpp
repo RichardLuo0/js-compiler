@@ -4,9 +4,11 @@
 #include <string>
 #include <utility>
 
-#include "Lexer.hpp"
+#include "GeneratedLexer.hpp"
 
 namespace JsCompiler {
+using Token = GeneratedParser::Token;
+  
 struct CompileException {
  public:
   [[nodiscard]] virtual std::string getMessage() const = 0;

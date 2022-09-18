@@ -1,22 +1,25 @@
 #pragma once
 
 #include <cassert>
+#include <list>
 #include <memory>
+#include <regex>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
 #include <vector>
-#include <regex>
-#include "Lexer.hpp"
 
 namespace GeneratedParser {
-using NonTerminalType = std::string;
-using TerminalType = TokenType;
-
+/*
+ * The specialization of std::hash<NonTerminalType> and std::hash<TerminalType>
+ * must be defined
+ */
+template <typename NonTerminalType, typename TerminalType>
 class LLTable {
  public:
- struct Symbol {
+  struct Symbol {
     enum Type { Terminal, NonTerminal, End } type;
     std::variant<NonTerminalType, TerminalType> value;
 
@@ -40,10 +43,7 @@ class LLTable {
       if (type != another.type) {
         return false;
       }
-      if (type == Terminal || type == NonTerminal) {
-        return value == another.value;
-      }
-      return true;
+      return value == another.value;
     }
 
     constexpr bool operator!=(const Symbol& another) const {
@@ -61,30 +61,30 @@ class LLTable {
   static inline const Symbol end{Symbol::End};
 
  protected:
-  struct HashPair {
+  struct PairHash {
     template <class T1>
     std::size_t operator()(const std::pair<T1, Symbol>& pair) const {
-      return std::hash<T1>()(pair.first) ^ Symbol::Hash()(pair.second);
+      return std::hash<T1>()(pair.first) ^ typename Symbol::Hash()(pair.second);
     }
   };
 
   Symbol start;
-  std::unordered_map<std::pair<NonTerminalType, Symbol>, std::vector<Symbol>,
-                     HashPair>
+  // Key is hash(non-terminal + terminal), value is production
+  std::unordered_map<std::pair<NonTerminalType, Symbol>, std::list<Symbol>,
+                     PairHash>
       table;
 
  public:
-  LLTable();
+  explicit LLTable(NonTerminalType start) : start(start) {}
 
   Symbol getStart() const { return start; }
 
-  std::vector<Symbol> predict(const Symbol& currentSymbol,
-                              const Symbol& nextInput) const noexcept(false) {
+  std::list<Symbol> predict(const Symbol& currentSymbol,
+                            const Symbol& nextInput) const noexcept(false) {
     assert(currentSymbol.type == Symbol::NonTerminal);
-    std::pair<NonTerminalType, Symbol> key =
-        std::make_pair(currentSymbol.getNonTerminal(), nextInput);
+    auto key = std::make_pair(currentSymbol.getNonTerminal(), nextInput);
     if (!table.count(key)) throw std::runtime_error("No match prediction");
     return table.at(key);
   }
 };
-}  // namespace LLTableGenerator
+}  // namespace GeneratedParser

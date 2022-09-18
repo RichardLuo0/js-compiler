@@ -7,14 +7,13 @@
 namespace ParserGenerator {
 enum TokenType {
   Eof,
-
   Definition,   // =
   Termination,  // ;
   Alternation,  // |
-  Terminal,     // "..."
-  NonTerminal,  // ...,
-  CCode,        // ${...}
-  Epsilon,      // ε
+  Terminal,     // ".*"
+  NonTerminal,  // [a-zA-Z0-9],
+  Regex,        // /Regex/
+  Epsilon,      // ""
 };
 
 struct Token {

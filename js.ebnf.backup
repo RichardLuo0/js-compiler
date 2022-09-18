@@ -1,6 +1,0 @@
-Start = Add;
-Add = Mul Add1;
-Add1 = "+" Mul Add1 | "";
-Mul = Id Mul1;
-Mul1 = "*" Id Mul1 | "";
-Id = "(" Add ")" | $"Identifier";

@@ -5,8 +5,6 @@
 #include <string>
 #include <utility>
 
-#include "Lexer.hpp"
-
 namespace JsCompiler {
 class Expression {
  public:
@@ -37,22 +35,21 @@ class IdentifierExpression : public Expression {
 
 class OperatorExpression : public Expression {
  protected:
-  const TokenType operatorType = Add;
+  const std::string operatorStr;
 
   const std::unique_ptr<Expression> left;
-
   const std::unique_ptr<Expression> right;
 
  public:
-  OperatorExpression(TokenType operatorType, std::unique_ptr<Expression> left,
+  OperatorExpression(std::string operatorStr, std::unique_ptr<Expression> left,
                      std::unique_ptr<Expression> right)
-      : operatorType(operatorType),
+      : operatorStr(std::move(operatorStr)),
         left(std::move(left)),
         right(std::move(right)) {}
 
   void codegen() const override {
     left->codegen();
-    std::cout << operatorType << std::endl;
+    std::cout << operatorStr << std::endl;
     right->codegen();
   }
 };

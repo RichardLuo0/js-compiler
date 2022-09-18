@@ -47,8 +47,8 @@ std::list<S> BNFParser::parseRight() const noexcept(false) {
       case Terminal:
         right.emplace_back<TerminalType>({TerminalType::String, token.value});
         break;
-      case CCode:
-        right.emplace_back<TerminalType>({TerminalType::CCode, token.value});
+      case Regex:
+        right.emplace_back<TerminalType>({TerminalType::Regex, token.value});
         break;
       case Epsilon:
         right.push_back(Table::end);

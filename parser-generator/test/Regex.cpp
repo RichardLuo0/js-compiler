@@ -3,10 +3,10 @@
 #include <cassert>
 #include <iostream>
 
-using namespace ParserGenerator;
+using namespace GeneratedParser;
 
 int test_Regex(int, char**) {
-  ParserGenerator::Regex regex(R"("([^\\]|(\\"))*")");
+  Regex regex(R"("([^\\]|(\\"))*")");
   assert(!regex.match(R"("aa\"ab")"));
   return 0;
 }

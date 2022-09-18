@@ -18,69 +18,60 @@ void BNFLexer::readNextToken() noexcept(false) {
   }
 
   while (std::isspace(currentChar) || currentChar == '\n') {
-    currentChar = stream.get();
+    currentChar = static_cast<char>(stream.get());
   }
 
   switch (currentChar) {
-    case '(':
-      currentChar = stream.get();
-      if (currentChar == '*') {
-        do {
-          currentChar = stream.get();
-        } while (currentChar != '*' || stream.get() != ')');
-        currentChar = stream.get();
-        return readNextToken();
-      } else
-        throw std::runtime_error("Expected '*'");
     case EOF:
       currentToken = {Eof, std::string(1, currentChar)};
       return;
     case '=':
       currentToken = {Definition, std::string(1, currentChar)};
-      currentChar = stream.get();
+      currentChar = static_cast<char>(stream.get());
       return;
     case ';':
       currentToken = {Termination, std::string(1, currentChar)};
-      currentChar = stream.get();
+      currentChar = static_cast<char>(stream.get());
       return;
     case '|':
       currentToken = {Alternation, std::string(1, currentChar)};
-      currentChar = stream.get();
+      currentChar = static_cast<char>(stream.get());
       return;
     case '"': {
       std::string value;
-      currentChar = stream.get();
-      while (currentChar != '"') {
+      currentChar = static_cast<char>(stream.get());
+      while (currentChar != '"' || value.back() == '\\') {
         value += currentChar;
-        currentChar = stream.get();
+        currentChar = static_cast<char>(stream.get());
       };
-      currentChar = stream.get();
+      currentChar = static_cast<char>(stream.get());
       if (value.empty())
         currentToken = {Epsilon, value};
       else
         currentToken = {Terminal, value};
       return;
     }
-    case '$': {
-      std::string value = "";
-      currentChar = stream.get();
-      if (currentChar == '"') {
-        currentChar = stream.get();
-        while (currentChar != '"') {
-          value += currentChar;
-          currentChar = stream.get();
-        };
-        currentChar = stream.get();
-        currentToken = {CCode, value};
-        return;
+    case '/': {
+      std::string value;
+      do {
+        value += currentChar;
+        currentChar = static_cast<char>(stream.get());
+      } while (currentChar != '/' || value.back() == '\\');
+      value += currentChar;
+      currentChar = static_cast<char>(stream.get());
+      if (currentChar == 'U') {
+        value += currentChar;
+        currentChar = static_cast<char>(stream.get());
       }
+      currentToken = {Regex, value};
+      return;
     }
     default:
       if (isInNonTerminal(currentChar)) {
         std::string value;
         do {
           value += currentChar;
-          currentChar = stream.get();
+          currentChar = static_cast<char>(stream.get());
         } while (isInNonTerminal(currentChar));
         currentToken = {NonTerminal, value};
         return;

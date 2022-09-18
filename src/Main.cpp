@@ -3,14 +3,15 @@
 #include <iostream>
 #include <memory>
 
+#include "GeneratedLexer.hpp"
 #include "JsIRBuilder.hpp"
-#include "Lexer.hpp"
-#include "Parser.hpp"
+#include "JsParser.hpp"
 
 using namespace JsCompiler;
 
-int main(int  /*argc*/, const char**  /*argv*/) {
-  JsIRBuilder builder((JsParser::create((JsLexer::create(std::cin)))));
+int main(int /*argc*/, const char** /*argv*/) {
+  JsIRBuilder builder(
+      JsParser::create((GeneratedParser::Lexer::create(std::cin))));
   builder.build();
   return 0;
 }

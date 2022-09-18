@@ -1,6 +1,10 @@
 .*
 !.gitignore
+!.clangd
 !.clang-format
 !.clang-tidy
+*.backup
 build
 backup
+
+src/Parser.cpp

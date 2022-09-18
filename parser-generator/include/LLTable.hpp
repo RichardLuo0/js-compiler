@@ -1,5 +1,7 @@
 #pragma once
 
+#include <corecrt.h>
+
 #include <algorithm>
 #include <cassert>
 #include <deque>
@@ -16,59 +18,20 @@
 #include <variant>
 #include <vector>
 
+#include "CommonLLTable.hpp"
+
 namespace ParserGenerator {
 /*
  * The specialization of std::hash<NonTerminalType> and std::hash<TerminalType>
  * must be defined
  */
 template <typename NonTerminalType, typename TerminalType>
-class LLTable {
+class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
+  using CommonLLTable = GeneratedParser::LLTable<NonTerminalType, TerminalType>;
+
  public:
-  struct Symbol {
-    enum Type { Terminal, NonTerminal, End } type;
-    std::variant<NonTerminalType, TerminalType> value;
-
-   public:
-    explicit Symbol(NonTerminalType nonTerminal)
-        : type(NonTerminal), value(nonTerminal) {}
-    explicit Symbol(TerminalType terminal) : type(Terminal), value(terminal) {}
-    explicit Symbol(Type type) : type(type) {}
-
-    NonTerminalType getNonTerminal() const {
-      assert(type == NonTerminal);
-      return std::get<NonTerminalType>(value);
-    }
-
-    TerminalType getTerminal() const {
-      assert(type == Terminal);
-      return std::get<TerminalType>(value);
-    }
-
-    constexpr bool operator==(const Symbol& another) const {
-      if (type != another.type) {
-        return false;
-      }
-      if (type == Terminal || type == NonTerminal) {
-        return value == another.value;
-      }
-      return true;
-    }
-
-    constexpr bool operator!=(const Symbol& another) const {
-      return (*this) != another;
-    }
-
-    struct Hash {
-      size_t operator()(const Symbol& symbol) const {
-        return std::hash<std::variant<NonTerminalType, TerminalType>>{}(
-            symbol.value);
-      }
-    };
-  };
-
-  static inline const Symbol end{Symbol::End};
-
   struct Production;
+  using Symbol = typename CommonLLTable::Symbol;
   using SymbolSet = std::unordered_set<Symbol, typename Symbol::Hash>;
   using PreviousSet = std::unordered_set<Production*>;
 
@@ -101,18 +64,7 @@ class LLTable {
   };
 
  protected:
-  struct HashPair {
-    template <class T1>
-    std::size_t operator()(const std::pair<T1, Symbol>& pair) const {
-      return std::hash<T1>()(pair.first) ^ typename Symbol::Hash()(pair.second);
-    }
-  };
-
-  Symbol start;
-  // Key is hash(non-terminal + terminal), value is production
-  std::unordered_map<std::pair<NonTerminalType, Symbol>, ProductionBase,
-                     HashPair>
-      table;
+  std::list<TerminalType> terminalList;
 
   struct Node;
   struct Edge {
@@ -122,7 +74,7 @@ class LLTable {
 
   struct Node {
     std::list<Edge> edges;
-    Symbol symbol = end;
+    Symbol symbol = CommonLLTable::end;
     bool isVisited = false;
   };
 
@@ -141,9 +93,10 @@ class LLTable {
       size_t grammarSize = grammar.size();
 
       // Construct a graph
-      graphInfo = {};
       auto& graph = graphInfo.first;
       auto& terminalNodeSet = graphInfo.second;
+      graph.clear();
+      terminalNodeSet.clear();
       for (auto& p : grammar) {
         const NonTerminalType& left = p.left;
         Symbol pSymbol(left);
@@ -208,7 +161,8 @@ class LLTable {
                   }
                   firstP.right.pop_front();
                   // If no right left
-                  if (firstP.right.size() <= 0) firstP.right.push_back(end);
+                  if (firstP.right.size() <= 0)
+                    firstP.right.push_back(CommonLLTable::end);
                   currentNode = path[currentNode]->to;
                   while (currentNode != edge.to) {
                     if (preCopiedNonTerminal != nullptr) {
@@ -241,8 +195,8 @@ class LLTable {
 
                 // Node to edge.to
                 p.left = newLeft;
-                grammar.push_back({newLeft, {end}});
-                int i = 0;
+                grammar.push_back({newLeft, {CommonLLTable::end}});
+                size_t i = 0;
                 for (auto it = grammar.begin(); i < grammarSize; i++, it++) {
                   Production& matchP = *it;
                   if (matchP.left == p.left) {
@@ -277,89 +231,89 @@ class LLTable {
        * @warning High space complexity?
        */
       struct Path {
+        Node* start;
         std::list<Edge*> edges;
-        std::optional<NonTerminalType> copyNameOfLastNode;
-        std::optional<NonTerminalType> copyNameOfFirstNode;
+
+        bool isExtracted = false;
 
         void extractCommonFactor(
-            Node* terminalNode, std::list<Production>& grammar,
+            Path& oldPath, std::list<Production>& grammar,
             const std::function<NonTerminalType(NonTerminalType)>&
-                createSubNonTerminal,
-            const Path* oldPath = nullptr) {
+                createSubNonTerminal) {
+          // Find the first different edge
           auto it = edges.begin();
-          Production& firstProduction = *(*it)->production;
-          bool isSameAsOldFirstEdge =
-              oldPath != nullptr &&
-              firstProduction.left == oldPath->edges.front()->production->left;
-          if (!isSameAsOldFirstEdge) {
-            if ((*it)->to->edges.size() > 1) {
-              NonTerminalType newLeft =
-                  createSubNonTerminal(firstProduction.left);
-              auto right = firstProduction.right;
-              right.pop_front();
-              grammar.push_back({newLeft, right});
-              const NonTerminalType& left = firstProduction.left;
-              this->copyNameOfFirstNode = left;
-            } else {
-              firstProduction.right.pop_front();
-            }
-          } else {
-            this->copyNameOfFirstNode = oldPath->copyNameOfFirstNode;
-          }
-          const NonTerminalType* preCopiedNonTerminal =
-              this->copyNameOfFirstNode.has_value()
-                  ? &this->copyNameOfFirstNode.value()
-                  : nullptr;
-          it++;
+          auto it2 = oldPath.edges.begin();
+          Production* production = nullptr;
+          Production* production2 = nullptr;
+          Node* startNode = nullptr;
+          Node* lastNextNode = start;
+          do {
+            startNode = lastNextNode;
+            if (it == edges.end() || it2 == oldPath.edges.end())
+              throw std::runtime_error("No common factor found");
+            lastNextNode = (*it)->to;
+            production = (*it++)->production;
+            production2 = (*it2++)->production;
+          } while (production == production2);
+
+          // Share the last production
+          Production& lastProduction = *edges.back()->production;
+          const NonTerminalType& left = lastProduction.left;
+          NonTerminalType newLeft = createSubNonTerminal(left);
+          lastProduction.right = {startNode->symbol, Symbol(newLeft)};
+
+          extractFront(--it, *startNode, newLeft, grammar,
+                       createSubNonTerminal);
+          if (!oldPath.isExtracted)
+            oldPath.extractFront(--it2, *startNode, newLeft, grammar,
+                                 createSubNonTerminal);
+        }
+
+        void extractFront(typename std::list<Edge*>::iterator& extractStart,
+                          const Node& extractStartNode,
+                          const NonTerminalType& lastNewNonTerminal,
+                          std::list<Production>& grammar,
+                          const std::function<NonTerminalType(NonTerminalType)>&
+                              createSubNonTerminal) {
+          isExtracted = true;
+          auto it = extractStart;
+          NonTerminalType* preNewNonTerminal = nullptr;
           while (it != edges.end()) {
             Edge* edge = *it;
-            if (*it == *edges.rbegin()) {
-              bool isOldPathCopied = (oldPath != nullptr &&
-                                      oldPath->copyNameOfLastNode.has_value());
-              NonTerminalType left = edge->production->left;
-              NonTerminalType newLeft =
-                  isOldPathCopied ? oldPath->copyNameOfLastNode.value()
-                                  : createSubNonTerminal(left);
-              edge->production->left = newLeft;
-              auto& right = edge->production->right;
-              if (preCopiedNonTerminal != nullptr) {
-                right.pop_front();
-                right.push_front(Symbol(*preCopiedNonTerminal));
-              }
-              if (isOldPathCopied)
-                grammar.push_back(
-                    Production(left, {terminalNode->symbol, Symbol(newLeft)}));
-              preCopiedNonTerminal = &newLeft;
-            } else if (edge->to->edges.size() > 1) {
-              // This node has multiple edges, create a copy to avoid change
-              NonTerminalType newLeft =
-                  createSubNonTerminal(edge->production->left);
-              auto newRight = edge->production->right;
-              if (preCopiedNonTerminal != nullptr) {
-                newRight.pop_front();
-                newRight.push_front(Symbol(*preCopiedNonTerminal));
-              }
-              grammar.push_back({newLeft, newRight});
-              preCopiedNonTerminal = &newLeft;
-            } else {
-              // No other node edges, it is safe to replace in place
-              auto& right = edge->production->right;
-              if (preCopiedNonTerminal != nullptr) {
-                right.pop_front();
-                right.push_front(Symbol(*preCopiedNonTerminal));
-              }
-              preCopiedNonTerminal = nullptr;
+            const bool isFirstEdge = it == extractStart;
+            const bool isLastEdge = edge == *edges.rbegin();
+            const bool isCreateNewP = isLastEdge ||
+                                      edge->to->edges.size() > 1 ||
+                                      preNewNonTerminal != nullptr;
+            auto newRight = edge->production->right;
+            if (isFirstEdge)
+              newRight.pop_front();
+            else if (preNewNonTerminal != nullptr) {
+              newRight.pop_front();
+              newRight.push_front(Symbol(*preNewNonTerminal));
             }
+            if (newRight.empty()) newRight.push_back(CommonLLTable::end);
+            if (isCreateNewP) {
+              NonTerminalType newLeft =
+                  isLastEdge ? lastNewNonTerminal
+                             : createSubNonTerminal(edge->production->left);
+              preNewNonTerminal = &newLeft;
+              grammar.push_back({newLeft, newRight});
+              if (!isLastEdge)
+                edge->production->right = {extractStartNode.symbol,
+                                           Symbol(newLeft)};
+            } else
+              edge->production->right = newRight;
             it++;
           }
-          this->copyNameOfLastNode = *preCopiedNonTerminal;
         }
       };
+
       std::unordered_set<Node*> visited;
       for (Node* terminalNode : terminalNodeSet) {
         // DFS
         std::unordered_map<Symbol*, Path> pathMap;
-        std::unordered_set<Node*> visitedAfterCurrentNode;
+        std::unordered_set<Node*> visitedAfterTerminal;
         std::stack<Node*> traverseStack({terminalNode});
         while (!traverseStack.empty()) {
           Node& node = *traverseStack.top();
@@ -367,28 +321,28 @@ class LLTable {
           if (!visited.count(&node))
             for (Edge& edge : node.edges) {
               Path& currentNodePath = pathMap[&node.symbol];
+              currentNodePath.start = terminalNode;
+              // The previous visited path
               Path& nextNodePath = pathMap[&edge.to->symbol];
+              // The new path
               Path newNextNodePath = currentNodePath;
               newNextNodePath.edges.push_back(&edge);
-              if (nextNodePath.copyNameOfLastNode.has_value()) {
+              if (visitedAfterTerminal.count(edge.to)) {
                 isChanged = true;
-                newNextNodePath.extractCommonFactor(terminalNode, grammar,
-                                                    createSubNonTerminal,
-                                                    &currentNodePath);
-              } else if (visitedAfterCurrentNode.count(edge.to)) {
-                isChanged = true;
-                nextNodePath.extractCommonFactor(terminalNode, grammar,
-                                                 createSubNonTerminal);
-                newNextNodePath.extractCommonFactor(
-                    terminalNode, grammar, createSubNonTerminal, &nextNodePath);
-              }
-              nextNodePath.edges = newNextNodePath.edges;
-              traverseStack.push(edge.to);
+                newNextNodePath.extractCommonFactor(nextNodePath, grammar,
+                                                    createSubNonTerminal);
+              } else
+                traverseStack.push(edge.to);
+              nextNodePath = newNextNodePath;
             }
-          visitedAfterCurrentNode.insert(&node);
+          visitedAfterTerminal.insert(&node);
           visited.insert(&node);
         }
       }
+    }
+
+    for (auto* node : graphInfo.second) {
+      terminalList.push_back(node->symbol.getTerminal());
     }
     return graphInfo;
   }
@@ -397,7 +351,7 @@ class LLTable {
     for (Node* terminalNode : terminalNodeSet) {
       // DFS
       Symbol& terminalSymbol = terminalNode->symbol;
-      if (terminalSymbol == end) continue;
+      if (terminalSymbol == CommonLLTable::end) continue;
       Edge dummyEdge{nullptr, terminalNode};
       std::stack<Edge*> traverseStack({&dummyEdge});
       while (!traverseStack.empty()) {
@@ -407,9 +361,9 @@ class LLTable {
         if (node.symbol.type == Symbol::NonTerminal) {
           auto key =
               std::make_pair(node.symbol.getNonTerminal(), terminalSymbol);
-          if (table.count(key))
+          if (this->table.count(key))
             throw std::runtime_error("Not valid LL(1) grammar");
-          table.emplace(key, *edge.production);
+          this->table.emplace(key, edge.production->right);
           edge.production->firstSet.insert(terminalSymbol);
         }
         for (Edge& edge : node.edges) {
@@ -425,19 +379,20 @@ class LLTable {
     std::list<Production*>&& nextWorkList = {};
     std::unordered_map<Production*, SymbolSet> leafNodeMap;
     for (Production& production : grammar) {
-      if (production.right.front() == end) workList.push_back(&production);
+      if (production.right.front() == CommonLLTable::end)
+        workList.push_back(&production);
     }
     while (!workList.empty()) {
       for (Production* workPointer : workList) {
         Production& work = *workPointer;
-        if (work.left == start.getNonTerminal()) {
-          leafNodeMap[workPointer].insert(end);
+        if (work.left == this->start.getNonTerminal()) {
+          leafNodeMap[workPointer].insert(CommonLLTable::end);
           continue;
         }
         for (Production& matchP : grammar) {
           if (matchP.left == work.left) continue;
           std::list<Symbol>& right = matchP.right;
-          int i = 0;
+          size_t i = 0;
           for (auto it = right.begin(); it != right.end(); it++) {
             const Symbol& symbol = *it;
             if (symbol.type == Symbol::NonTerminal &&
@@ -464,7 +419,7 @@ class LLTable {
                   leafNodeMap[workPointer].insert(nextSymbol);
                   break;
                 case Symbol::End:
-                  leafNodeMap[workPointer].insert(end);
+                  leafNodeMap[workPointer].insert(CommonLLTable::end);
                   break;
               }
             }
@@ -485,7 +440,8 @@ class LLTable {
         if (previousSet.empty()) {
           for (const Symbol& symbol : symbolSet) {
             auto key = std::make_pair(production->left, symbol);
-            if (!table.count(key)) table.emplace(key, *production);
+            if (!this->table.count(key))
+              this->table.emplace(key, production->right);
           }
           continue;
         }
@@ -509,12 +465,14 @@ class LLTable {
    */
   LLTable(NonTerminalType start, std::list<Production> grammar,
           std::function<NonTerminalType(NonTerminalType)> createSubNonTerminal)
-      : start(Symbol(start)) {
+      : CommonLLTable(start) {
     const auto& graphInfo = transformToLLGrammar(grammar, createSubNonTerminal);
     createFirstSet(graphInfo.second);
     createFollowSet(grammar);
   }
 
-  auto getTable() { return table; }
+  auto getTable() const { return this->table; }
+
+  auto getTerminalList() const { return this->terminalList; }
 };
 }  // namespace ParserGenerator

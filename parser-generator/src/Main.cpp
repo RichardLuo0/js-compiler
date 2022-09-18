@@ -1,68 +1,104 @@
+#include <corecrt.h>
+
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <memory>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 
+#include "CppGenerator.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 
 using namespace ParserGenerator;
 
-void printTable(Table table) {
-  std::string result = "{";
-  for (auto [key, production] : table.getTable()) {
-    result +=
-        "{{" + key.first + "," +
-        (key.second.type == S::Terminal ? key.second.getTerminal().value + "}"
-                                        : "}") +
-        ",{";
-    for (const S& symbol : production.getRight()) {
-      switch (symbol.type) {
-        case S::Terminal:
-          result += "," + symbol.getTerminal().value;
-          break;
-        case S::NonTerminal:
-          result += "," + symbol.getNonTerminal();
-          break;
-        case S::End:
-          result += ",$";
-        default:
-          break;
-      }
-    }
-    result += "}}\n";
-  }
-  result += "}\n";
-  std::cout << result << std::endl;
+inline std::string generateTerminal(
+    const std::unordered_map<TerminalType, size_t>& reverseSearchMap,
+    const S& symbol) {
+  return std::to_string(reverseSearchMap.at(symbol.getTerminal()));
 }
 
-void outputToFile(Table table, std::ofstream& output) {
-  std::string result = "{";
-  for (auto [key, production] : table.getTable()) {
+std::string generateTableString(
+    const Table& table,
+    const std::unordered_map<TerminalType, size_t>& reverseSearchMap) {
+  std::string result = "{\n";
+  for (auto [key, right] : table.getTable()) {
     result +=
-        "{{" + key.first + "," +
-        (key.second.type == S::Terminal ? key.second.getTerminal().value + "}"
-                                        : "}") +
+        "{{\"" + key.first + "\"," +
+        (key.second.type == S::Terminal
+             ? "S(" + generateTerminal(reverseSearchMap, key.second) + ")}"
+             : "end}") +
         ",{";
-    for (const S& symbol : production.getRight()) {
+    for (const S& symbol : right) {
+      if (&symbol != &right.front()) result += ',';
       switch (symbol.type) {
         case S::Terminal:
-          result += "," + symbol.getTerminal().value;
+          result += "S(" + generateTerminal(reverseSearchMap, symbol) + ")";
           break;
         case S::NonTerminal:
-          result += "," + symbol.getNonTerminal();
+          result += "S(\"" + symbol.getNonTerminal() + "\")";
           break;
         case S::End:
-          result += ",$";
+          result += "end";
         default:
           break;
       }
     }
-    result += "}}\n";
+    result += "}},\n";
   }
-  result += "}\n";
-  output << result << std::endl;
+  // Pop the last ,\n
+  result.erase(result.size() - 2, 2);
+  result += "\n}";
+  return result;
+}
+
+std::string generateTerminalString(
+    const std::list<TerminalType>& terminalList) {
+  std::string result;
+  for (const auto& terminal : terminalList) {
+    result += "matcherList.push_back(std::make_unique";
+    switch (terminal.type) {
+      case TerminalType::String:
+        result += "<StringMatcher>(\"" + terminal.value;
+        break;
+      case TerminalType::Regex:
+        result += "<RegexMatcher>(\"" + terminal.value;
+        break;
+      default:
+        throw std::runtime_error("Unknown terminal");
+    }
+    result += "\"));\n";
+  }
+  return result;
+}
+
+void outputToStream(const Table& table, std::ostream& output) {
+  std::unordered_map<TerminalType, size_t> reverseSearchMap;
+  const auto& terminalList = table.getTerminalList();
+  size_t index = 0;
+  for (const auto& terminal : terminalList) {
+    reverseSearchMap.emplace(terminal, index++);
+  }
+
+  CppFile file;
+  file.addTopLevelExpression(
+      std::make_unique<CppInclude>("GeneratedLexer.hpp"));
+  file.addTopLevelExpression(
+      std::make_unique<CppInclude>("GeneratedLLTable.hpp"));
+  file.addTopLevelExpression(
+      std::make_unique<CppInclude>("GeneratedParser.hpp"));
+  file.addTopLevelExpression(std::make_unique<CppUsing>("GeneratedParser"));
+  file.addTopLevelExpression(std::make_unique<CppMethod>(
+      "Lexer::Lexer", std::list<std::string>{"std::istream& stream"},
+      "stream(stream)", generateTerminalString(terminalList)));
+  file.addTopLevelExpression(std::make_unique<CppMethod>(
+      "GeneratedLLTable::GeneratedLLTable", std::list<std::string>{},
+      "LLTable(\"" + table.getStart().getNonTerminal() + "\")",
+      "table = " + generateTableString(table, reverseSearchMap) + ";\n"));
+  output << file.output();
 }
 
 std::unordered_map<std::string, std::string> parseOption(
@@ -102,10 +138,8 @@ int main(int argc, const char** argv) {
 
   if (options.count("-o")) {
     std::ofstream outputFile(options["-o"]);
-    outputToFile(table, outputFile);
+    outputToStream(table, outputFile);
   } else {
-    printTable(table);
+    outputToStream(table, std::cout);
   }
-
-  bnfFile.close();
 }

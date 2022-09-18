@@ -8,7 +8,7 @@
 
 namespace ParserGenerator {
 struct TerminalType {
-  enum { CCode, String } type;
+  enum { Regex, String } type;
   std::string value;
 
   bool operator==(const TerminalType& another) const {
