@@ -1,5 +1,6 @@
 #include "JsParser.hpp"
 
+#include "Exception.hpp"
 #include "Utils.hpp"
 
 using namespace JsCompiler;
@@ -25,15 +26,19 @@ std::unique_ptr<Expression> JsParser::parseExpression() {
     const SymbolNode& node = *postOrderStack.top();
     postOrderStack.pop();
     if (node.symbol.type == S::Terminal) {
-      if (lexer->getMatcherStringFromIndex(node.symbol.getTerminal()) ==
-          "/a/U") {
-        expressionQueue.push(
-            std::make_unique<IdentifierExpression>(node.value));
-      }
       continue;
     }
-    switch (Utils::hash(node.symbol.getNonTerminal().c_str())) {
+    const std::string& nonTerminal = node.symbol.getNonTerminal();
+    switch (Utils::hash(nonTerminal)) {
+      case Utils::hash("Identifier"):
+        if (node.children.size() == 1) {
+          expressionQueue.push(std::make_unique<IdentifierExpression>(
+              node.children.front().value));
+        }
+        break;
       case Utils::hash("Add"): {
+        if (expressionQueue.size() < 2)
+          throw UnexpectedTokenException(nonTerminal);
         std::unique_ptr<Expression> left = std::move(expressionQueue.front());
         expressionQueue.pop();
         std::unique_ptr<Expression> right = std::move(expressionQueue.front());

@@ -12,6 +12,7 @@ Checks: >
   readability-*,
   -misc-no-recursion,
   -bugprone-exception-escape,
+  -bugprone-easily-swappable-parameters,
   -cppcoreguidelines-virtual-class-destructor,
   -cppcoreguidelines-non-private-member-variables-in-classes,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,

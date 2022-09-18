@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -8,33 +9,33 @@
 
 namespace JsCompiler {
 using Token = GeneratedParser::Token;
-  
-struct CompileException {
- public:
-  [[nodiscard]] virtual std::string getMessage() const = 0;
 
-  void printMessage() const { std::cout << getMessage() << std::endl; };
-};
-
-struct UnexpectedTokenException : public CompileException {
- private:
-  const std::string token;
+struct CompileException : std::exception {
+ protected:
+  const std::string message;
 
  public:
-  explicit UnexpectedTokenException(std::string token)
-      : token(std::move(token)) {}
-  explicit UnexpectedTokenException(char ch)
-      : UnexpectedTokenException(std::string(1, ch)) {}
+  explicit CompileException(std::string message)
+      : message(std::move(message)) {}
 
-  [[nodiscard]] std::string getMessage() const override;
+  [[nodiscard]] const char* what() const noexcept override {
+    return message.c_str();
+  }
+
+  void printMessage() const { std::cout << message << std::endl; };
 };
 
 struct SyntaxException : public CompileException {
-  const Token token;
-
  public:
-  explicit SyntaxException(Token token) : token(std::move(token)) {}
+  explicit SyntaxException(const std::string& message)
+      : CompileException("Syntax error: " + message) {}
+};
 
-  [[nodiscard]] std::string getMessage() const override;
+struct UnexpectedTokenException : public SyntaxException {
+ public:
+  explicit UnexpectedTokenException(const std::string& token)
+      : SyntaxException("Unexpected token: " + token) {}
+  explicit UnexpectedTokenException(char ch)
+      : UnexpectedTokenException(std::string(1, ch)) {}
 };
 }  // namespace JsCompiler

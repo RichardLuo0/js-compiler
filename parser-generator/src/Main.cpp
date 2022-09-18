@@ -12,6 +12,7 @@
 #include "CppGenerator.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
+#include "Utils.hpp"
 
 using namespace ParserGenerator;
 
@@ -27,7 +28,7 @@ std::string generateTableString(
   std::string result = "{\n";
   for (auto [key, right] : table.getTable()) {
     result +=
-        "{{\"" + key.first + "\"," +
+        "{{\"" + Utils::escapeInPlace(key.first) + "\"," +
         (key.second.type == S::Terminal
              ? "S(" + generateTerminal(reverseSearchMap, key.second) + ")}"
              : "end}") +
@@ -39,7 +40,8 @@ std::string generateTableString(
           result += "S(" + generateTerminal(reverseSearchMap, symbol) + ")";
           break;
         case S::NonTerminal:
-          result += "S(\"" + symbol.getNonTerminal() + "\")";
+          result +=
+              "S(\"" + Utils::escapeInPlace(symbol.getNonTerminal()) + "\")";
           break;
         case S::End:
           result += "end";
@@ -62,10 +64,10 @@ std::string generateTerminalString(
     result += "matcherList.push_back(std::make_unique";
     switch (terminal.type) {
       case TerminalType::String:
-        result += "<StringMatcher>(\"" + terminal.value;
+        result += "<StringMatcher>(\"" + Utils::escapeInPlace(terminal.value);
         break;
       case TerminalType::Regex:
-        result += "<RegexMatcher>(\"" + terminal.value;
+        result += "<RegexMatcher>(\"" + Utils::escapeInPlace(terminal.value);
         break;
       default:
         throw std::runtime_error("Unknown terminal");

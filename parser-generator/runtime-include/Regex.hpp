@@ -1,107 +1,84 @@
 #pragma once
 
+#include <corecrt.h>
+
 #include <algorithm>
+#include <cstddef>
 #include <exception>
 #include <functional>
 #include <iterator>
 #include <list>
 #include <memory>
 #include <stack>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <utility>
 
 namespace GeneratedParser {
 class Regex {
+ public:
+  struct Token;
+  struct Container;
+
  protected:
-  void parse(std::string regexStr) {
+  struct ContainerStack {
+   protected:
     std::stack<std::unique_ptr<Container>> stack;
-    stack.push(std::make_unique<Group>());
 
-    auto popLastToken = [&stack]() -> std::unique_ptr<Token> {
-      if (stack.top()->size() > 0) return stack.top()->pop();
+   public:
+    ContainerStack() { stack.push(std::make_unique<Group>()); }
 
+    std::unique_ptr<Token> popLastToken(size_t pos) {
+      if (stack.top()->size() > 0) return stack.top()->pop(pos);
       auto topContainer = std::move(stack.top());
       stack.pop();
       return topContainer;
-    };
+    }
 
-    std::function<void(size_t)> finishTopContainer = nullptr;
-    std::function<void(size_t, std::unique_ptr<Token>)> pushToTopContainer =
-        nullptr;
+    void pushToTopContainer(size_t pos, char ch) {
+      if (stack.top()->push(*this, pos, ch)) finishTopContainer(pos);
+    }
+    void pushToTopContainer(size_t pos, std::unique_ptr<Container> &container) {
+      if (stack.top()->push(*this, pos, container)) finishTopContainer(pos);
+    }
 
-    finishTopContainer = [&stack, &pushToTopContainer](size_t i) {
+    void finishTopContainer(size_t pos) {
       if (stack.size() < 2)
-        throw std::runtime_error("No group to close at " + std::to_string(i));
+        throw std::runtime_error("No group to close: " + std::to_string(pos));
       std::unique_ptr<Container> current = std::move(stack.top());
       stack.pop();
-      pushToTopContainer(i, std::move(current));
-    };
+      pushToTopContainer(pos, current);
+    }
 
-    pushToTopContainer = [&stack, &finishTopContainer](
-                             size_t i, std::unique_ptr<Token> token) {
-      bool shouldBeFinished = stack.top()->push(std::move(token));
-      if (shouldBeFinished) finishTopContainer(i);
-    };
+    void push(std::unique_ptr<Container> container) {
+      stack.push(std::move(container));
+    }
 
+    [[nodiscard]] size_t size() const { return stack.size(); }
+
+    [[nodiscard]] Container *top() const { return stack.top().get(); }
+  };
+
+  void parse(const std::string &regexStr) {
+    ContainerStack stack;
     for (size_t i = 0; i < regexStr.size(); i++) {
-      char &ch = regexStr[i];
+      char ch = regexStr[i];
       switch (ch) {
         case '/':  // Delimiter
           if (i == regexStr.size() - 2) {
             if (regexStr[++i] == 'U') isGreedy = false;
           }
           break;
-        case '(':
-          stack.push(std::make_unique<Group>());
-          break;
-        case ')':
-          finishTopContainer(i);
-          break;
-        case '^': {
-          auto lastToken = popLastToken();
-          auto *charSet = dynamic_cast<CharSet *>(lastToken.release());
-          if (charSet == nullptr || charSet->size() != 0)
-            throw std::runtime_error("^ must appear right after [ at " +
-                                     std::to_string(i));
-          charSet->isInverted = true;
-          stack.push(std::unique_ptr<CharSet>(charSet));
-          break;
-        }
-        case '[':
-          stack.push(std::make_unique<CharSet>());
-          break;
-        case ']':
-          finishTopContainer(i);
-          break;
-        case '|': {
-          auto alternation = std::make_unique<Alternation>(popLastToken());
-          stack.push(std::move(alternation));
-          break;
-        }
-        case '.':
-          pushToTopContainer(i, std::make_unique<Any>());
-          break;
-        case '*': {
-          auto zeroOrMore = std::make_unique<ZeroOrMore>(popLastToken());
-          pushToTopContainer(i, std::move(zeroOrMore));
-          break;
-        }
-        case '?': {
-          auto zeroOrOnce = std::make_unique<ZeroOrOnce>(popLastToken());
-          pushToTopContainer(i, std::move(zeroOrOnce));
-          break;
-        }
         case '\\':
           ch = regexStr[++i];
         default:
-          pushToTopContainer(i, std::make_unique<Char>(ch));
+          stack.pushToTopContainer(i, ch);
       }
     }
-
-    // Generate epsilon NFA
     if (stack.size() != 1)
       throw std::runtime_error("A group or char class is not closed");
+    // Generate epsilon NFA
     stack.top()->generate(*this, createState());
   };
 
@@ -146,7 +123,7 @@ class Regex {
 
   bool isGreedy = true;
 
-  explicit Regex(std::string regexStr) { parse(std::move(regexStr)); };
+  explicit Regex(const std::string &regexStr) { parse(regexStr); };
 
   State &createState() {
     stateList.emplace_back();
@@ -178,7 +155,7 @@ class Regex {
                         }) != currentState.end();
   }
 
-  bool match(const std::string &str) {
+  [[nodiscard]] bool match(const std::string &str) const {
     std::unordered_set<const Regex::State *> currentState{&getStartState()};
     for (const auto &ch : str) {
       currentState = matchCharFromState(currentState, ch);
@@ -203,6 +180,7 @@ class Regex {
   };
 
   struct CharCondition : Condition {
+   public:
     const char value;
 
     explicit CharCondition(char value) : value(value){};
@@ -210,18 +188,33 @@ class Regex {
     bool operator()(char ch) const override { return value == ch; }
   };
 
-  struct CharSetCondition : Condition {
-    const std::list<char> charList;
-    bool isInverted = false;
+  struct CharRangeCondition : Condition {
+   public:
+    const char start;
+    char end{};
 
-    CharSetCondition(std::list<char> charList, bool isInverted)
-        : charList(std::move(charList)), isInverted(isInverted){};
+    explicit CharRangeCondition(char start) : start(start){};
+
+    bool operator()(char ch) const override { return ch >= start && ch <= end; }
+  };
+
+  struct CharSetCondition : Condition {
+   protected:
+    std::list<std::shared_ptr<const Condition>> conditionList;
+    const bool isInverted;
+
+   public:
+    CharSetCondition(std::list<std::shared_ptr<const Condition>> conditionList,
+                     bool isInverted)
+        : conditionList(std::move(conditionList)), isInverted(isInverted){};
 
     bool operator()(char ch) const override {
       bool isWithinSet =
-          std::find_if(charList.begin(), charList.end(), [&ch](char chToMatch) {
-            return chToMatch == ch;
-          }) != charList.end();
+          std::find_if(
+              conditionList.begin(), conditionList.end(),
+              [&ch](const std::shared_ptr<const Condition> &condition) {
+                return condition->operator()(ch);
+              }) != conditionList.end();
       return isInverted ^ isWithinSet;
     }
   };
@@ -234,12 +227,13 @@ class Regex {
   struct Container : Token {
    public:
     /**
-     * @param  token   : Next token.
      * @return {bool}  : Should be finished after push or not.
      */
-    virtual bool push(std::unique_ptr<Token> token) = 0;
+    virtual bool push(ContainerStack &, size_t, char) = 0;
+    virtual bool push(ContainerStack &, size_t,
+                      std::unique_ptr<Container> &) = 0;
 
-    virtual std::unique_ptr<Token> pop() = 0;
+    virtual std::unique_ptr<Token> pop(size_t) = 0;
 
     [[nodiscard]] virtual size_t size() const = 0;
   };
@@ -280,12 +274,44 @@ class Regex {
       return *currentState;
     };
 
-    bool push(std::unique_ptr<Token> token) override {
-      tokenList.push_back(std::move(token));
+    bool push(ContainerStack &stack, size_t pos, char ch) override {
+      switch (ch) {
+        case '(':
+          stack.push(std::make_unique<Group>());
+          break;
+        case ')':
+          stack.finishTopContainer(pos);
+          break;
+        case '[':
+          stack.push(std::make_unique<CharSet>());
+          break;
+        case '|':
+          stack.push(std::make_unique<Alternation>(stack.popLastToken(pos)));
+          break;
+        case '.':
+          tokenList.push_back(std::make_unique<Any>());
+          break;
+        case '*':
+          tokenList.push_back(
+              std::make_unique<ZeroOrMore>(stack.popLastToken(pos)));
+          break;
+        case '?':
+          tokenList.push_back(
+              std::make_unique<ZeroOrOnce>(stack.popLastToken(pos)));
+          break;
+        default:
+          tokenList.push_back(std::make_unique<Char>(ch));
+      }
       return false;
     };
 
-    std::unique_ptr<Token> pop() override {
+    bool push(ContainerStack &, size_t,
+              std::unique_ptr<Container> &container) override {
+      tokenList.push_back(std::move(container));
+      return false;
+    }
+
+    std::unique_ptr<Token> pop(size_t) override {
       auto temp = std::move(tokenList.back());
       tokenList.pop_back();
       return temp;
@@ -296,36 +322,67 @@ class Regex {
 
   struct CharSet : Container {
    protected:
-    std::list<Char> charList;
+    std::list<std::shared_ptr<const Condition>> conditionList;
 
    public:
     bool isInverted = false;
 
     State &generate(Regex &regex, State &preState) const override {
       State &newState = regex.createState();
-      std::list<char> charToMatchList;
-      std::transform(charList.begin(), charList.end(), charToMatchList.begin(),
-                     [](const Char &token) { return token.value; });
       preState.addTransition(
-          {std::make_unique<CharSetCondition>(charToMatchList, isInverted),
+          {std::make_unique<CharSetCondition>(conditionList, isInverted),
            &newState});
       return newState;
     };
 
-    bool push(std::unique_ptr<Token> token) override {
-      auto *chToken = dynamic_cast<Char *>(token.get());
-      if (chToken == nullptr)
-        throw std::runtime_error(
-            "Only single char is allowed within char class");
-      charList.emplace_back(chToken->value);
+    bool push(ContainerStack &stack, size_t pos, char ch) override {
+      CharRangeCondition *notFulfilledCharRangeCondition = nullptr;
+      switch (ch) {
+        case '-': {
+          if (notFulfilledCharRangeCondition)
+            throw std::runtime_error("Previous char range is not fulfilled: " +
+                                     std::to_string(pos));
+          const auto &lastCondition = conditionList.back();
+          conditionList.pop_back();
+          const auto *start =
+              dynamic_cast<const CharCondition *>(lastCondition.get());
+          if (start == nullptr)
+            throw std::runtime_error("Previous token must be a char: " +
+                                     std::to_string(pos));
+          auto charRangeCondition = std::make_unique<CharRangeCondition>(ch);
+          notFulfilledCharRangeCondition = charRangeCondition.get();
+          conditionList.push_back(std::move(charRangeCondition));
+          break;
+        }
+        case ']':
+          stack.finishTopContainer(pos);
+          break;
+        case '^':
+          if (conditionList.empty()) {
+            isInverted = true;
+            break;
+          }
+        default:
+          if (notFulfilledCharRangeCondition) {
+            notFulfilledCharRangeCondition->end = ch;
+            notFulfilledCharRangeCondition = nullptr;
+          } else
+            conditionList.push_back(std::make_unique<CharCondition>(ch));
+      }
       return false;
     };
 
-    std::unique_ptr<Token> pop() override {
-      throw std::runtime_error("Expected a character");
+    bool push(ContainerStack &, size_t pos,
+              std::unique_ptr<Container> &) override {
+      throw std::runtime_error("Charset does not allow container type :" +
+                               std::to_string(pos));
+    }
+
+    std::unique_ptr<Token> pop(size_t pos) override {
+      throw std::runtime_error("Expected a character: " + std::to_string(pos));
     };
 
-    [[nodiscard]] size_t size() const override { return charList.size(); };
+    [[nodiscard]] size_t size() const override { return conditionList.size(); };
   };
 
   struct Alternation : Container {
@@ -345,13 +402,30 @@ class Regex {
       return newState;
     };
 
-    bool push(std::unique_ptr<Token> token) override {
-      right = std::move(token);
+    bool push(ContainerStack &stack, size_t pos, char ch) override {
+      switch (ch) {
+        case '(':
+          stack.push(std::make_unique<Group>());
+          break;
+        case ')':
+          stack.finishTopContainer(pos);
+          break;
+        default:
+          right = std::make_unique<Char>(ch);
+          return true;
+      }
+      return false;
+    };
+
+    bool push(ContainerStack &, size_t,
+              std::unique_ptr<Container> &container) override {
+      right = std::move(container);
       return true;
     };
 
-    std::unique_ptr<Token> pop() override {
-      throw std::runtime_error("Expected a character or group");
+    std::unique_ptr<Token> pop(size_t pos) override {
+      throw std::runtime_error("Expected a character or group: " +
+                               std::to_string(pos));
     };
 
     [[nodiscard]] size_t size() const override {

@@ -1,4 +1,4 @@
 Start = Add | Minus;
 Add = Identifier "+" Identifier;
 Minus = Identifier "-" Identifier;
-Identifier = /a/U;
+Identifier = /"([^\\]|(\\"))*"/U;
