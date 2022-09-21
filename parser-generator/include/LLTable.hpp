@@ -1,9 +1,6 @@
 #pragma once
 
-#include <corecrt.h>
-
 #include <algorithm>
-#include <cassert>
 #include <deque>
 #include <functional>
 #include <list>
@@ -17,6 +14,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <iostream>
 
 #include "CommonLLTable.hpp"
 
@@ -36,19 +34,11 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
   using PreviousSet = std::unordered_set<Production*>;
 
   struct ProductionBase {
-    friend class LLTable;
-
-   protected:
     NonTerminalType left;
     std::list<Symbol> right;
 
-   public:
     ProductionBase(NonTerminalType left, std::list<Symbol> right)
         : left(left), right(right) {}
-
-    NonTerminalType getLeft() { return left; }
-
-    std::list<Symbol> getRight() { return right; }
   };
 
   struct Production : public ProductionBase {
@@ -64,8 +54,6 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
   };
 
  protected:
-  std::list<TerminalType> terminalList;
-
   struct Node;
   struct Edge {
     Production* production;
@@ -75,7 +63,6 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
   struct Node {
     std::list<Edge> edges;
     Symbol symbol = CommonLLTable::end;
-    bool isVisited = false;
   };
 
   auto transformToLLGrammar(
@@ -89,10 +76,10 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
         graphInfo;
     while (isChanged) {
       isChanged = false;
-      // Avoid access new production
+      // Avoid iterating new production
       size_t grammarSize = grammar.size();
 
-      // Construct a graph
+      // Construct first set graph
       auto& graph = graphInfo.first;
       auto& terminalNodeSet = graphInfo.second;
       graph.clear();
@@ -103,7 +90,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
         if (graph.count(pSymbol)) continue;
         std::stack<Symbol*> traverseStack({&pSymbol});
         while (!traverseStack.empty()) {
-          Symbol& symbol = *traverseStack.top();
+          const Symbol& symbol = *traverseStack.top();
           graph[symbol].symbol = symbol;
           traverseStack.pop();
           for (auto& matchP : grammar) {
@@ -119,9 +106,10 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
           }
         }
       }
-
+      
       // Eliminate left recursion
       // Tarjan's algorithm
+      std::unordered_set<Node*> visited;
       for (Node* terminalNode : terminalNodeSet) {
         // DFS
         std::stack<Node*> pathStack;
@@ -129,13 +117,13 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
         std::stack<Node*> traverseStack({terminalNode});
         while (!traverseStack.empty()) {
           Node& node = *traverseStack.top();
-          node.isVisited = true;
+          visited.insert(&node);
           traverseStack.pop();
           size_t size = traverseStack.size();
           typename std::list<Edge>::iterator it = node.edges.begin();
           while (it != node.edges.end()) {
             Edge& edge = *it;
-            if (!edge.to->isVisited) {
+            if (!visited.count(edge.to)) {
               traverseStack.push(edge.to);
               path[&node] = &edge;
             } else {
@@ -225,6 +213,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
           }
         }
       }
+      visited.clear();
 
       /**
        * Eliminate backtracking
@@ -308,8 +297,6 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
           }
         }
       };
-
-      std::unordered_set<Node*> visited;
       for (Node* terminalNode : terminalNodeSet) {
         // DFS
         std::unordered_map<Symbol*, Path> pathMap;
@@ -341,9 +328,6 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
       }
     }
 
-    for (auto* node : graphInfo.second) {
-      terminalList.push_back(node->symbol.getTerminal());
-    }
     return graphInfo;
   }
 
@@ -463,9 +447,10 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
    * non terminal called A, this function can return a new non-terminal called
    * A1. You need to make sure no other non-terminal has the same name.
    */
-  LLTable(NonTerminalType start, std::list<Production> grammar,
-          std::function<NonTerminalType(NonTerminalType)> createSubNonTerminal)
-      : CommonLLTable(start) {
+  LLTable(NonTerminalType start, std::list<Production>& grammar,
+          const std::function<NonTerminalType(NonTerminalType)>&
+              createSubNonTerminal)
+      : CommonLLTable(std::move(start)) {
     const auto& graphInfo = transformToLLGrammar(grammar, createSubNonTerminal);
     createFirstSet(graphInfo.second);
     createFollowSet(grammar);

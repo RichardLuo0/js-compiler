@@ -4,7 +4,7 @@
 !.clang-format
 !.clang-tidy
 *.backup
-build
+build*
 backup
 
 src/Parser.cpp

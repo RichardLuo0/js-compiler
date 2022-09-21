@@ -20,7 +20,10 @@ template <typename NonTerminalType, typename TerminalType>
 class LLTable {
  public:
   struct Symbol {
+   public:
     enum Type { Terminal, NonTerminal, End } type;
+
+   protected:
     std::variant<NonTerminalType, TerminalType> value;
 
    public:
@@ -40,20 +43,18 @@ class LLTable {
     }
 
     constexpr bool operator==(const Symbol& another) const {
-      if (type != another.type) {
-        return false;
-      }
-      return value == another.value;
+      return type == another.type && value == another.value;
     }
 
     constexpr bool operator!=(const Symbol& another) const {
-      return (*this) != another;
+      return !((*this) == another);
     }
 
     struct Hash {
       size_t operator()(const Symbol& symbol) const {
-        return std::hash<std::variant<NonTerminalType, TerminalType>>{}(
-            symbol.value);
+        return std::hash<Type>()(symbol.type) ^
+               std::hash<std::variant<NonTerminalType, TerminalType>>{}(
+                   symbol.value);
       }
     };
   };
@@ -69,15 +70,15 @@ class LLTable {
   };
 
   Symbol start;
-  // Key is hash(non-terminal + terminal), value is production
+  // Key is hash(non-terminal + terminal), value is produced symbol
   std::unordered_map<std::pair<NonTerminalType, Symbol>, std::list<Symbol>,
                      PairHash>
       table;
 
  public:
-  explicit LLTable(NonTerminalType start) : start(start) {}
+  explicit LLTable(NonTerminalType start) : start(std::move(start)) {}
 
-  Symbol getStart() const { return start; }
+  const Symbol& getStart() const { return start; }
 
   std::list<Symbol> predict(const Symbol& currentSymbol,
                             const Symbol& nextInput) const noexcept(false) {

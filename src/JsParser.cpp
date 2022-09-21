@@ -13,8 +13,8 @@ std::unique_ptr<Expression> JsParser::parseExpression() {
   while (!traverseStack.empty()) {
     const SymbolNode& node = *traverseStack.top();
     traverseStack.pop();
-    if (node.symbol.type == S::End) continue;
-    if (!node.children.empty() || node.symbol.type == S::Terminal)
+    if (node.symbol.type == Symbol::End) continue;
+    if (!node.children.empty() || node.symbol.type == Symbol::Terminal)
       postOrderStack.push(&node);
     for (const SymbolNode& child : node.children) {
       traverseStack.push(&child);
@@ -25,11 +25,17 @@ std::unique_ptr<Expression> JsParser::parseExpression() {
   while (!postOrderStack.empty()) {
     const SymbolNode& node = *postOrderStack.top();
     postOrderStack.pop();
-    if (node.symbol.type == S::Terminal) {
+    if (node.symbol.type == Symbol::Terminal) {
       continue;
     }
     const std::string& nonTerminal = node.symbol.getNonTerminal();
     switch (Utils::hash(nonTerminal)) {
+      case Utils::hash("SingleLineCommentChars"):
+        if (node.children.size() == 1) {
+          expressionQueue.push(
+              std::make_unique<CommentExpression>(node.children.front().value));
+        }
+        break;
       case Utils::hash("Identifier"):
         if (node.children.size() == 1) {
           expressionQueue.push(std::make_unique<IdentifierExpression>(

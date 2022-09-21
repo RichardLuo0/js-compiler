@@ -1,8 +1,3 @@
-#include <llvm/IR/LLVMContext.h>
-
-#include <iostream>
-#include <memory>
-
 #include "GeneratedLexer.hpp"
 #include "JsIRBuilder.hpp"
 #include "JsParser.hpp"

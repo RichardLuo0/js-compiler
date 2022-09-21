@@ -1,4 +1,13 @@
-Start = Add | Minus;
-Add = Identifier "+" Identifier;
-Minus = Identifier "-" Identifier;
-Identifier = /"([^\\]|(\\"))*"/U;
+Start = Comment;
+
+(* Comment *)
+Comment = SingleLineComment | MultiLineComment;
+
+MultiLineComment = "/*" MultiLineCommentChars "*/";
+MultiLineCommentChars = /[^*]+/ | "*" PostAsteriskCommentChars | "";
+PostAsteriskCommentChars = MultiLineNotForwardSlashOrAsteriskChar MultiLineCommentChars
+                         | "*" PostAsteriskCommentChars;
+MultiLineNotForwardSlashOrAsteriskChar = /[^\/*]+/;
+
+SingleLineComment = "//" SingleLineCommentChars;
+SingleLineCommentChars = /[^\n]+/ | "";

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <corecrt.h>
-
 #include <algorithm>
 #include <cstddef>
 #include <exception>
@@ -72,6 +70,11 @@ class Regex {
           break;
         case '\\':
           ch = regexStr[++i];
+          switch (ch) {
+            case 'n':
+              ch = '\n';
+              break;
+          }
         default:
           stack.pushToTopContainer(i, ch);
       }
@@ -97,15 +100,18 @@ class Regex {
 
     [[nodiscard]] std::unordered_set<const State *> accept(char ch) const {
       std::unordered_set<const State *> stateSet;
-      for (const auto &transition : transitionList) {
-        if (transition.condition) {
-          if (transition.condition->operator()(ch))
-            stateSet.insert(transition.state);
-        } else {
-          auto nextSet = transition.state->accept(ch);
-          stateSet.insert(nextSet.begin(), nextSet.end());
+      if (this->isFinalState())
+        stateSet.insert(this);
+      else
+        for (const auto &transition : transitionList) {
+          if (transition.condition) {
+            if (transition.condition->operator()(ch))
+              stateSet.insert(transition.state);
+          } else {
+            const auto &nextSet = transition.state->accept(ch);
+            stateSet.insert(nextSet.begin(), nextSet.end());
+          }
         }
-      }
       return stateSet;
     };
 
@@ -137,12 +143,8 @@ class Regex {
                      char ch) {
     std::unordered_set<const Regex::State *> currentState;
     for (const auto &state : state) {
-      if (state->isFinalState())
-        currentState.insert(state);
-      else {
-        auto nextSet = state->accept(ch);
-        currentState.insert(nextSet.begin(), nextSet.end());
-      }
+      auto nextSet = state->accept(ch);
+      currentState.insert(nextSet.begin(), nextSet.end());
     }
     return currentState;
   }
@@ -245,19 +247,19 @@ class Regex {
     explicit Char(char value) : value(value){};
 
     State &generate(Regex &regex, State &preState) const override {
-      State &newState = regex.createState();
+      State &endState = regex.createState();
       preState.addTransition(
-          {std::make_unique<CharCondition>(value), &newState});
-      return newState;
+          {std::make_unique<CharCondition>(value), &endState});
+      return endState;
     };
   };
 
   struct Any : Token {
    public:
     State &generate(Regex &regex, State &preState) const override {
-      State &newState = regex.createState();
-      preState.addTransition({std::make_unique<AnyCondition>(), &newState});
-      return newState;
+      State &endState = regex.createState();
+      preState.addTransition({std::make_unique<AnyCondition>(), &endState});
+      return endState;
     };
   };
 
@@ -299,6 +301,10 @@ class Regex {
           tokenList.push_back(
               std::make_unique<ZeroOrOnce>(stack.popLastToken(pos)));
           break;
+        case '+':
+          tokenList.push_back(
+              std::make_unique<OnceOrMore>(stack.popLastToken(pos)));
+          break;
         default:
           tokenList.push_back(std::make_unique<Char>(ch));
       }
@@ -328,11 +334,11 @@ class Regex {
     bool isInverted = false;
 
     State &generate(Regex &regex, State &preState) const override {
-      State &newState = regex.createState();
+      State &endState = regex.createState();
       preState.addTransition(
           {std::make_unique<CharSetCondition>(conditionList, isInverted),
-           &newState});
-      return newState;
+           &endState});
+      return endState;
     };
 
     bool push(ContainerStack &stack, size_t pos, char ch) override {
@@ -396,10 +402,10 @@ class Regex {
         : left(std::move(left)), right(std::move(right)) {}
 
     State &generate(Regex &regex, State &preState) const override {
-      State &newState = regex.createState();
-      left->generate(regex, preState).addTransition({nullptr, &newState});
-      right->generate(regex, preState).addTransition({nullptr, &newState});
-      return newState;
+      State &endState = regex.createState();
+      left->generate(regex, preState).addTransition({nullptr, &endState});
+      right->generate(regex, preState).addTransition({nullptr, &endState});
+      return endState;
     };
 
     bool push(ContainerStack &stack, size_t pos, char ch) override {
@@ -442,12 +448,12 @@ class Regex {
         : token(std::move(token)) {}
 
     State &generate(Regex &regex, State &preState) const override {
-      State &finalState = token->generate(regex, preState);
-      State &loopState = regex.createState();
-      preState.addTransition({nullptr, &finalState});
-      loopState.addTransition({nullptr, &preState});
-      loopState.addTransition({nullptr, &finalState});
-      return finalState;
+      State &endState = regex.createState();
+      preState.addTransition({nullptr, &endState});
+      State &tokenState = token->generate(regex, preState);
+      tokenState.addTransition({nullptr, &preState});
+      tokenState.addTransition({nullptr, &endState});
+      return endState;
     };
   };
 
@@ -463,6 +469,23 @@ class Regex {
       State &finalState = token->generate(regex, preState);
       preState.addTransition({std::make_unique<AnyCondition>(), &finalState});
       return finalState;
+    };
+  };
+
+  struct OnceOrMore : Token {
+   protected:
+    std::unique_ptr<Token> token;
+
+   public:
+    explicit OnceOrMore(std::unique_ptr<Token> token)
+        : token(std::move(token)) {}
+
+    State &generate(Regex &regex, State &preState) const override {
+      State &endState = regex.createState();
+      State &tokenState = token->generate(regex, preState);
+      tokenState.addTransition({nullptr, &preState});
+      tokenState.addTransition({nullptr, &endState});
+      return endState;
     };
   };
 };

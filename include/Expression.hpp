@@ -11,6 +11,16 @@ class Expression {
   void virtual codegen() const = 0;
 };
 
+class CommentExpression : public Expression {
+ protected:
+  const std::string value;
+
+ public:
+  explicit CommentExpression(std::string value) : value(std::move(value)){};
+
+  void codegen() const override { std::cout << value << std::endl; }
+};
+
 class NumberExpression : public Expression {
  protected:
   const double value;

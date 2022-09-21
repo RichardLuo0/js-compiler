@@ -7,13 +7,14 @@
 namespace ParserGenerator {
 enum TokenType {
   Eof,
-  Definition,   // =
-  Termination,  // ;
-  Alternation,  // |
-  Terminal,     // ".*"
-  NonTerminal,  // [a-zA-Z0-9],
-  Regex,        // /Regex/
-  Epsilon,      // ""
+  Definition,      // =
+  Termination,     // ;
+  Alternation,     // |
+  NonTerminal,     // Any char but token,
+  StringTerminal,  // ".*"
+  RegexTerminal,   // /Regex/
+  Epsilon,         // ""
+  Comment          // (* *)
 };
 
 struct Token {
@@ -27,7 +28,7 @@ class Lexer {
   Token currentToken;
 
  public:
-  explicit Lexer(std::istream &stream) : stream(stream) {};
+  explicit Lexer(std::istream &stream) : stream(stream){};
 
   virtual void readNextToken() noexcept(false) = 0;
 
@@ -36,7 +37,7 @@ class Lexer {
 
 class BNFLexer : public Lexer {
  public:
-  explicit BNFLexer(std::istream &stream) : Lexer(stream) {};
+  explicit BNFLexer(std::istream &stream) : Lexer(stream){};
 
   static inline std::unique_ptr<BNFLexer> create(std::istream &stream) {
     return std::make_unique<BNFLexer>(stream);
@@ -44,4 +45,4 @@ class BNFLexer : public Lexer {
 
   void readNextToken() noexcept(false) override;
 };
-}  // namespace LLTableGenerator
+}  // namespace ParserGenerator

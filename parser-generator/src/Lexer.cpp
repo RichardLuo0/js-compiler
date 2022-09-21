@@ -1,12 +1,13 @@
 #include "Lexer.hpp"
 
-#include <stdexcept>
-#include <string>
-
 using namespace ParserGenerator;
 
 inline bool isInNonTerminal(unsigned char c) {
   return std::isalpha(c) || std::isdigit(c);
+}
+
+inline void read(char& currentChar, std::istream& stream) {
+  currentChar = static_cast<char>(stream.get());
 }
 
 void BNFLexer::readNextToken() noexcept(false) {
@@ -18,7 +19,7 @@ void BNFLexer::readNextToken() noexcept(false) {
   }
 
   while (std::isspace(currentChar) || currentChar == '\n') {
-    currentChar = static_cast<char>(stream.get());
+    read(currentChar, stream);
   }
 
   switch (currentChar) {
@@ -27,43 +28,56 @@ void BNFLexer::readNextToken() noexcept(false) {
       return;
     case '=':
       currentToken = {Definition, std::string(1, currentChar)};
-      currentChar = static_cast<char>(stream.get());
+      read(currentChar, stream);
       return;
     case ';':
       currentToken = {Termination, std::string(1, currentChar)};
-      currentChar = static_cast<char>(stream.get());
+      read(currentChar, stream);
       return;
     case '|':
       currentToken = {Alternation, std::string(1, currentChar)};
-      currentChar = static_cast<char>(stream.get());
+      read(currentChar, stream);
       return;
     case '"': {
       std::string value;
-      currentChar = static_cast<char>(stream.get());
+      read(currentChar, stream);
       while (currentChar != '"' || value.back() == '\\') {
         value += currentChar;
-        currentChar = static_cast<char>(stream.get());
+        read(currentChar, stream);
       };
-      currentChar = static_cast<char>(stream.get());
+      read(currentChar, stream);
       if (value.empty())
         currentToken = {Epsilon, value};
       else
-        currentToken = {Terminal, value};
+        currentToken = {StringTerminal, value};
       return;
     }
     case '/': {
       std::string value;
       do {
         value += currentChar;
-        currentChar = static_cast<char>(stream.get());
+        read(currentChar, stream);
       } while (currentChar != '/' || value.back() == '\\');
       value += currentChar;
-      currentChar = static_cast<char>(stream.get());
+      read(currentChar, stream);
       if (currentChar == 'U') {
         value += currentChar;
-        currentChar = static_cast<char>(stream.get());
+        read(currentChar, stream);
       }
-      currentToken = {Regex, value};
+      currentToken = {RegexTerminal, value};
+      return;
+    }
+    case '(': {
+      std::string value;
+      read(currentChar, stream);
+      if (currentChar != '*') throw std::runtime_error("Expecting * after (");
+      read(currentChar, stream);
+      while (currentChar != ')' || value.back() != '*') {
+        value += currentChar;
+        read(currentChar, stream);
+      }
+      read(currentChar, stream);
+      currentToken = {Comment, value};
       return;
     }
     default:
@@ -71,7 +85,7 @@ void BNFLexer::readNextToken() noexcept(false) {
         std::string value;
         do {
           value += currentChar;
-          currentChar = static_cast<char>(stream.get());
+          read(currentChar, stream);
         } while (isInNonTerminal(currentChar));
         currentToken = {NonTerminal, value};
         return;

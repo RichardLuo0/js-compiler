@@ -1,7 +1,5 @@
 #pragma once
 
-#include <corecrt.h>
-
 #include <istream>
 #include <memory>
 #include <regex>
@@ -41,16 +39,16 @@ class Lexer {
     std::unordered_set<const Regex::State*> currentState;
 
    public:
-    explicit RegexMatcher(std::string regexStr)
-        : regexStr(regexStr), regex(Regex(std::move(regexStr))) {
+    explicit RegexMatcher(const std::string& regexStr)
+        : regexStr(regexStr), regex(Regex(regexStr)) {
       currentState.insert(&regex.getStartState());
     };
 
     [[nodiscard]] bool match(char ch) override {
       if (currentState.empty()) return false;
-      if (ch == EOF)
-        return regex.isGreedy && Regex::isAnyStateMatch(currentState);
-      if (Regex::isAnyStateMatch(currentState)) return true;
+      if ((ch == EOF || !regex.isGreedy) &&
+          Regex::isAnyStateMatch(currentState))
+        return true;
       currentState = Regex::matchCharFromState(currentState, ch);
       if (regex.isGreedy)
         return currentState.size() == 1 &&
@@ -88,6 +86,14 @@ class Lexer {
 
   std::vector<std::unique_ptr<TokenMatcher>> matcherList;
 
+  [[nodiscard]] virtual inline bool isEof(const char& ch) const {
+    return ch == EOF;
+  }
+
+  [[nodiscard]] virtual inline bool isSpace(const char& ch) const {
+    return std::isspace(ch);
+  }
+
  public:
   static std::unique_ptr<Lexer> create(std::istream& stream) {
     return std::make_unique<Lexer>(stream);
@@ -95,18 +101,14 @@ class Lexer {
 
   explicit Lexer(std::istream& stream);
 
-  [[nodiscard]] virtual inline bool isInputEnd(const char& ch) const {
-    return ch == EOF || ch == '\n';  // TODO
-  }
-
   void readNextToken() {
     static char currentChar = ' ';
-    if (isInputEnd(currentChar)) {
-      currentToken = {eof};
+    if (isEof(currentChar)) {
+      currentToken = {eof, ""};
       return;
     }
 
-    while (std::isspace(currentChar)) {
+    while (isSpace(currentChar)) {
       currentChar = static_cast<char>(stream.get());
     }
 
@@ -124,7 +126,7 @@ class Lexer {
         }
       }
       if (isMatched) break;
-      if (isInputEnd(currentChar)) throw std::runtime_error("Incomplete token");
+      if (isEof(currentChar)) throw std::runtime_error("Incomplete token");
       value += currentChar;
       currentChar = static_cast<char>(stream.get());
     }

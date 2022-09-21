@@ -1,7 +1,6 @@
-#include <corecrt.h>
-
 #include <fstream>
 #include <iostream>
+#include <list>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -10,40 +9,36 @@
 #include <unordered_map>
 
 #include "CppGenerator.hpp"
+#include "LLTable.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "Utils.hpp"
 
 using namespace ParserGenerator;
 
-inline std::string generateTerminal(
-    const std::unordered_map<TerminalType, size_t>& reverseSearchMap,
-    const S& symbol) {
-  return std::to_string(reverseSearchMap.at(symbol.getTerminal()));
-}
+using Table = LLTable<std::string, size_t>;
+using Production = Table::Production;
+using Symbol = Table::Symbol;
 
-std::string generateTableString(
-    const Table& table,
-    const std::unordered_map<TerminalType, size_t>& reverseSearchMap) {
+std::string generateTableString(const Table& table) {
   std::string result = "{\n";
   for (auto [key, right] : table.getTable()) {
-    result +=
-        "{{\"" + Utils::escapeInPlace(key.first) + "\"," +
-        (key.second.type == S::Terminal
-             ? "S(" + generateTerminal(reverseSearchMap, key.second) + ")}"
-             : "end}") +
-        ",{";
-    for (const S& symbol : right) {
+    result += "{{\"" + Utils::escapeInPlace(key.first) + "\"," +
+              (key.second.type == Symbol::Terminal
+                   ? "Symbol(" + std::to_string(key.second.getTerminal()) + ")}"
+                   : "end}") +
+              ",{";
+    for (const Symbol& symbol : right) {
       if (&symbol != &right.front()) result += ',';
       switch (symbol.type) {
-        case S::Terminal:
-          result += "S(" + generateTerminal(reverseSearchMap, symbol) + ")";
+        case Symbol::Terminal:
+          result += "Symbol(" + std::to_string(symbol.getTerminal()) + ")";
           break;
-        case S::NonTerminal:
-          result +=
-              "S(\"" + Utils::escapeInPlace(symbol.getNonTerminal()) + "\")";
+        case Symbol::NonTerminal:
+          result += "Symbol(\"" +
+                    Utils::escapeInPlace(symbol.getNonTerminal()) + "\")";
           break;
-        case S::End:
+        case Symbol::End:
           result += "end";
         default:
           break;
@@ -77,21 +72,14 @@ std::string generateTerminalString(
   return result;
 }
 
-void outputToStream(const Table& table, std::ostream& output) {
-  std::unordered_map<TerminalType, size_t> reverseSearchMap;
-  const auto& terminalList = table.getTerminalList();
-  size_t index = 0;
-  for (const auto& terminal : terminalList) {
-    reverseSearchMap.emplace(terminal, index++);
-  }
-
+void outputToStream(const Table& table,
+                    const std::list<TerminalType>& terminalList,
+                    std::ostream& output) {
   CppFile file;
   file.addTopLevelExpression(
       std::make_unique<CppInclude>("GeneratedLexer.hpp"));
   file.addTopLevelExpression(
       std::make_unique<CppInclude>("GeneratedLLTable.hpp"));
-  file.addTopLevelExpression(
-      std::make_unique<CppInclude>("GeneratedParser.hpp"));
   file.addTopLevelExpression(std::make_unique<CppUsing>("GeneratedParser"));
   file.addTopLevelExpression(std::make_unique<CppMethod>(
       "Lexer::Lexer", std::list<std::string>{"std::istream& stream"},
@@ -99,7 +87,7 @@ void outputToStream(const Table& table, std::ostream& output) {
   file.addTopLevelExpression(std::make_unique<CppMethod>(
       "GeneratedLLTable::GeneratedLLTable", std::list<std::string>{},
       "LLTable(\"" + table.getStart().getNonTerminal() + "\")",
-      "table = " + generateTableString(table, reverseSearchMap) + ";\n"));
+      "table = " + generateTableString(table) + ";\n"));
   output << file.output();
 }
 
@@ -132,16 +120,35 @@ int main(int argc, const char** argv) {
 
   std::ifstream bnfFile(options["default"]);
   BNFParser parser(BNFLexer::create(bnfFile));
+
+  // Convert terminal to size_t to avoid outputting very long string
+  std::list<TerminalType> terminalList;
+  std::list<Production> productionList;
+  for (auto& production : parser.parse()) {
+    std::list<Symbol> right;
+    for (auto& symbol : production.right) {
+      if (symbol.type == BNFParser::Symbol::Terminal) {
+        const auto& terminal = symbol.getTerminal();
+        right.emplace_back(terminalList.size());
+        terminalList.push_back(terminal);
+      } else if (symbol.type == BNFParser::Symbol::NonTerminal)
+        right.emplace_back(symbol.getNonTerminal());
+      else
+        right.push_back(Table::end);
+    }
+    productionList.emplace_back(production.left, right);
+  }
+
   std::unordered_map<std::string, int> subNonTerminalNameMap;
-  Table table("Start", parser.parse(), [&](const std::string& nonTerminal) {
+  Table table("Start", productionList, [&](const std::string& nonTerminal) {
     subNonTerminalNameMap[nonTerminal] += 1;
     return nonTerminal + std::to_string(subNonTerminalNameMap[nonTerminal]);
   });
 
   if (options.count("-o")) {
     std::ofstream outputFile(options["-o"]);
-    outputToStream(table, outputFile);
+    outputToStream(table, terminalList, outputFile);
   } else {
-    outputToStream(table, std::cout);
+    outputToStream(table, terminalList, std::cout);
   }
 }

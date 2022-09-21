@@ -9,20 +9,20 @@
 #include "GeneratedLexer.hpp"
 
 namespace GeneratedParser {
-using S = GeneratedLLTable::Symbol;
+using Symbol = GeneratedLLTable::Symbol;
 
 class Parser {
  protected:
   struct SymbolNode {
-    const S symbol;
+    const Symbol symbol;
     std::string value;
 
     SymbolNode* previousNode;
     std::list<SymbolNode> children;
 
-    SymbolNode(S symbol, SymbolNode* previousNode)
+    SymbolNode(Symbol symbol, SymbolNode* previousNode)
         : symbol(std::move(symbol)), previousNode(previousNode) {}
-    explicit SymbolNode(const S& symbol) : SymbolNode(symbol, nullptr) {}
+    explicit SymbolNode(const Symbol& symbol) : SymbolNode(symbol, nullptr) {}
 
     bool operator==(const SymbolNode& another) const {
       return symbol == another.symbol;
@@ -53,8 +53,8 @@ class Parser {
     lexer->readNextToken();
     while (!stack.empty()) {
       const Token& currentToken = lexer->getCurrentToken();
-      const S& symbol = isInputEnd(currentToken) ? GeneratedLLTable::end
-                                                 : S{currentToken.type};
+      const Symbol& symbol = isInputEnd(currentToken) ? GeneratedLLTable::end
+                                                 : Symbol{currentToken.type};
       SymbolNode& topSymbolNode = *stack.top();
       if (topSymbolNode.symbol == symbol) {
         topSymbolNode.value = currentToken.value;
@@ -62,10 +62,10 @@ class Parser {
         stack.pop();
         continue;
       }
-      const std::list<S>& children =
+      const std::list<Symbol>& children =
           table.predict(topSymbolNode.symbol, symbol);
       stack.pop();
-      if (children.front().type != S::End) {
+      if (children.front().type != Symbol::End) {
         for (const auto& symbol : children) {
           topSymbolNode.children.emplace_back(symbol, &topSymbolNode);
         }

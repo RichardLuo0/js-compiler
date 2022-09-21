@@ -6,25 +6,27 @@
 
 using namespace ParserGenerator;
 
-std::list<P> BNFParser::parse() const noexcept(false) {
-  std::list<P> rules;
+std::list<BNFParser::Production> BNFParser::parse() const noexcept(false) {
+  std::list<Production> productionList;
 
   lexer->readNextToken();
   Token currentToken = lexer->getCurrentToken();
   while (currentToken.type != Eof) {
-    rules.push_back(parseExpression());
-    while (lexer->getCurrentToken().type == Alternation) {
-      lexer->readNextToken();
-      rules.emplace_back(rules.back().getLeft(), parseRight());
+    if (currentToken.type != Comment) {
+      productionList.push_back(parseExpression());
+      while (lexer->getCurrentToken().type == Alternation) {
+        lexer->readNextToken();
+        productionList.emplace_back(productionList.back().left, parseRight());
+      }
     }
     lexer->readNextToken();
     currentToken = lexer->getCurrentToken();
   }
 
-  return rules;
+  return productionList;
 }
 
-P BNFParser::parseExpression() const noexcept(false) {
+BNFParser::Production BNFParser::parseExpression() const noexcept(false) {
   Token left = lexer->getCurrentToken();
   lexer->readNextToken();
 
@@ -36,18 +38,18 @@ P BNFParser::parseExpression() const noexcept(false) {
   return {left.value, parseRight()};
 }
 
-std::list<S> BNFParser::parseRight() const noexcept(false) {
-  std::list<S> right;
+std::list<BNFParser::Symbol> BNFParser::parseRight() const noexcept(false) {
+  std::list<Symbol> right;
   do {
     Token token = lexer->getCurrentToken();
     switch (token.type) {
       case NonTerminal:
         right.emplace_back(token.value);
         break;
-      case Terminal:
+      case StringTerminal:
         right.emplace_back<TerminalType>({TerminalType::String, token.value});
         break;
-      case Regex:
+      case RegexTerminal:
         right.emplace_back<TerminalType>({TerminalType::Regex, token.value});
         break;
       case Epsilon:
