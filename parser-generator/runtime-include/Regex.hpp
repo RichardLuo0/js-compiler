@@ -1,9 +1,9 @@
 #pragma once
 
 #include <algorithm>
-#include <cstddef>
 #include <exception>
 #include <functional>
+#include <istream>
 #include <iterator>
 #include <list>
 #include <memory>
@@ -13,6 +13,8 @@
 #include <unordered_set>
 #include <utility>
 
+#include "RuntimeUtility.hpp"
+
 namespace GeneratedParser {
 class Regex {
  public:
@@ -20,6 +22,8 @@ class Regex {
   struct Container;
 
  protected:
+  using Stream = Utility::ForwardBufferedInputStream;
+
   struct ContainerStack {
    protected:
     std::stack<std::unique_ptr<Container>> stack;
@@ -37,7 +41,7 @@ class Regex {
     void pushToTopContainer(size_t pos, char ch) {
       if (stack.top()->push(*this, pos, ch)) finishTopContainer(pos);
     }
-    void pushToTopContainer(size_t pos, std::unique_ptr<Container> &container) {
+    void pushToTopContainer(size_t pos, std::unique_ptr<Container>& container) {
       if (stack.top()->push(*this, pos, container)) finishTopContainer(pos);
     }
 
@@ -55,28 +59,22 @@ class Regex {
 
     [[nodiscard]] size_t size() const { return stack.size(); }
 
-    [[nodiscard]] Container *top() const { return stack.top().get(); }
+    [[nodiscard]] Container* top() const { return stack.top().get(); }
   };
 
-  void parse(const std::string &regexStr) {
+  void parse(const std::string& regexStr) {
     ContainerStack stack;
-    for (size_t i = 0; i < regexStr.size(); i++) {
-      char ch = regexStr[i];
+    for (size_t pos = 0; pos < regexStr.size(); pos++) {
+      char ch = regexStr.at(pos);
       switch (ch) {
         case '/':  // Delimiter
-          if (i == regexStr.size() - 2) {
-            if (regexStr[++i] == 'U') isGreedy = false;
-          }
-          break;
-        case '\\':
-          ch = regexStr[++i];
-          switch (ch) {
-            case 'n':
-              ch = '\n';
-              break;
+          if (pos == 0 || pos == regexStr.size() - 1) break;
+          if (pos == regexStr.size() - 2) {
+            if (regexStr.at(++pos) == 'U') _isGreedy = false;
+            break;
           }
         default:
-          stack.pushToTopContainer(i, ch);
+          stack.pushToTopContainer(pos, ch);
       }
     }
     if (stack.size() != 1)
@@ -86,6 +84,58 @@ class Regex {
   };
 
  public:
+  struct Controller {
+    virtual char peek() = 0;
+    virtual char get() = 0;
+    virtual void consume() = 0;
+    [[nodiscard]] virtual size_t record() const = 0;
+    virtual void restore(size_t index) = 0;
+  };
+
+  struct StreamController : Controller {
+   protected:
+    Stream& stream;
+
+   public:
+    explicit StreamController(Stream& stream) : stream(stream){};
+
+    char peek() override { return static_cast<char>(stream.peek()); }
+
+    char get() override { return static_cast<char>(stream.get()); };
+
+    void consume() override { stream.read(); }
+
+    [[nodiscard]] size_t record() const override { return stream.tellg(); }
+
+    void restore(size_t index) override { stream.seekg(index); }
+  };
+
+  struct StringController : Controller {
+   protected:
+    std::string str;
+    size_t index = 0;
+
+   public:
+    explicit StringController(std::string str) : str(std::move(str)){};
+
+    char peek() override {
+      if (index == str.size()) return EOF;
+      return str.at(index);
+    }
+
+    char get() override {
+      char currentChar = peek();
+      index++;
+      return currentChar;
+    };
+
+    void consume() override { index++; }
+
+    [[nodiscard]] size_t record() const override { return index; }
+
+    void restore(size_t index) override { this->index = index; }
+  };
+
   struct Transition;
   struct State {
     friend struct Transition;
@@ -98,83 +148,118 @@ class Regex {
       transitionList.push_back(std::move(transition));
     };
 
-    [[nodiscard]] std::unordered_set<const State *> accept(char ch) const {
-      std::unordered_set<const State *> stateSet;
-      if (this->isFinalState())
-        stateSet.insert(this);
-      else
-        for (const auto &transition : transitionList) {
-          if (transition.condition) {
-            if (transition.condition->operator()(ch))
-              stateSet.insert(transition.state);
-          } else {
-            const auto &nextSet = transition.state->accept(ch);
-            stateSet.insert(nextSet.begin(), nextSet.end());
-          }
+    [[nodiscard]] std::unordered_set<const State*> accept(
+        Controller& controller) const {
+      std::unordered_set<const State*> stateSet;
+      for (const auto& transition : transitionList) {
+        if (transition.condition) {
+          if (transition.condition->operator()(controller))
+            stateSet.insert(transition.state);
+        } else {
+          const auto& newStateSet = transition.state->accept(controller);
+          stateSet.insert(newStateSet.begin(), newStateSet.end());
         }
+      }
       return stateSet;
-    };
+    }
 
-    [[nodiscard]] bool isFinalState() const {
+    [[nodiscard]] bool isMatched() const {
       if (transitionList.empty()) return true;
       return std::find_if(transitionList.begin(), transitionList.end(),
-                          [](const Transition &transition) {
-                            return transition.condition != nullptr ||
-                                   !transition.state->isFinalState();
-                          }) == transitionList.end();
-    };
+                          [](const Transition& transition) {
+                            return transition.condition == nullptr &&
+                                   transition.state->isMatched();
+                          }) != transitionList.end();
+    }
   };
 
   std::list<State> stateList;
 
-  bool isGreedy = true;
+ protected:
+  bool _isGreedy = true;
 
-  explicit Regex(const std::string &regexStr) { parse(regexStr); };
-
-  State &createState() {
+  [[nodiscard]] State& createState() {
     stateList.emplace_back();
     return stateList.back();
   }
 
-  [[nodiscard]] const State &getStartState() const { return stateList.front(); }
+ public:
+  explicit Regex(const std::string& regexStr) { parse(regexStr); };
 
-  [[nodiscard]] static std::unordered_set<const Regex::State *>
-  matchCharFromState(const std::unordered_set<const Regex::State *> &state,
-                     char ch) {
-    std::unordered_set<const Regex::State *> currentState;
-    for (const auto &state : state) {
-      auto nextSet = state->accept(ch);
-      currentState.insert(nextSet.begin(), nextSet.end());
-    }
-    return currentState;
-  }
+  [[nodiscard]] const State& getStartState() const { return stateList.front(); }
+
+  [[nodiscard]] const bool& isGreedy() const { return _isGreedy; }
 
   static bool isAnyStateMatch(
-      std::unordered_set<const Regex::State *> currentState) {
+      std::unordered_set<const Regex::State*> currentState) {
     return std::find_if(currentState.begin(), currentState.end(),
-                        [](const State *state) {
-                          return state->isFinalState();
+                        [](const State* state) {
+                          return state->isMatched();
                         }) != currentState.end();
   }
 
-  [[nodiscard]] bool match(const std::string &str) const {
-    std::unordered_set<const Regex::State *> currentState{&getStartState()};
-    for (const auto &ch : str) {
-      currentState = matchCharFromState(currentState, ch);
-      if (!isGreedy && isAnyStateMatch(currentState)) return true;
+  [[nodiscard]] bool match(std::string& str) const {
+    StringController controller(str);
+    return Regex::match(getStartState(), controller, _isGreedy);
+  }
+
+  [[nodiscard]] bool match(std::istream& stdStream) const {
+    Stream stream(stdStream);
+    return match(stream);
+  }
+
+  [[nodiscard]] bool match(Stream& stream) const {
+    StreamController controller(stream);
+    return Regex::match(getStartState(), controller, _isGreedy);
+  }
+
+  [[nodiscard]] static bool match(const State& startState,
+                                  Controller& controller,
+                                  bool isGreedy = true) {
+    std::unordered_set<const Regex::State*> currentSet{&startState};
+    std::unordered_set<const Regex::State*> nextSet{};
+    int lastMatchedIndex = isGreedy && isAnyStateMatch(currentSet)
+                               ? static_cast<int>(controller.record())
+                               : -1;
+    while (controller.peek() != EOF) {
+      for (const auto& state : currentSet) {
+        const auto& singleNextSet = state->accept(controller);
+        nextSet.insert(singleNextSet.begin(), singleNextSet.end());
+      }
+      currentSet = nextSet;
+      nextSet.clear();
+      if (isGreedy) {
+        if (currentSet.empty()) {
+          if (lastMatchedIndex >= 0) {
+            controller.restore(lastMatchedIndex);
+            return true;
+          }
+          return false;
+        }
+        if (isAnyStateMatch(currentSet)) {
+          lastMatchedIndex = static_cast<int>(controller.record());
+        }
+      } else {
+        if (currentSet.empty()) return false;
+        if (isAnyStateMatch(currentSet)) return true;
+      }
     }
-    return isGreedy ? isAnyStateMatch(currentState) : false;
+    return isGreedy ? isAnyStateMatch(currentSet) : false;
   }
 
   struct Condition {
-    virtual bool operator()(char) const = 0;
+   public:
+    virtual bool operator()(Controller& controller) const {
+      return this->operator()(controller.get());
+    };
 
-    virtual ~Condition() = default;
+   protected:
+    virtual bool operator()(char) const { return false; };
   };
 
   struct Transition {
     std::unique_ptr<Condition> condition;
-    const State *state;
+    const State* state;
   };
 
   struct AnyCondition : Condition {
@@ -190,6 +275,22 @@ class Regex {
     bool operator()(char ch) const override { return value == ch; }
   };
 
+  struct LookaheadCondition : Condition {
+   public:
+    const State* startState;
+    const bool isInverted = false;
+
+    LookaheadCondition(State* startState, bool isInverted)
+        : startState(startState), isInverted(isInverted){};
+
+    bool operator()(Controller& controller) const override {
+      size_t index = controller.record();
+      bool isMatched = Regex::match(*startState, controller);
+      controller.restore(index);
+      return !isInverted & isMatched;
+    }
+  };
+
   struct CharRangeCondition : Condition {
    public:
     const char start;
@@ -202,20 +303,20 @@ class Regex {
 
   struct CharSetCondition : Condition {
    protected:
-    std::list<std::shared_ptr<const Condition>> conditionList;
+    std::list<std::shared_ptr<Condition>> conditionList;
     const bool isInverted;
 
    public:
-    CharSetCondition(std::list<std::shared_ptr<const Condition>> conditionList,
+    CharSetCondition(std::list<std::shared_ptr<Condition>> conditionList,
                      bool isInverted)
         : conditionList(std::move(conditionList)), isInverted(isInverted){};
 
-    bool operator()(char ch) const override {
+    bool operator()(Controller& controller) const override {
       bool isWithinSet =
           std::find_if(
               conditionList.begin(), conditionList.end(),
-              [&ch](const std::shared_ptr<const Condition> &condition) {
-                return condition->operator()(ch);
+              [&controller](const std::shared_ptr<Condition>& condition) {
+                return condition->operator()(controller);
               }) != conditionList.end();
       return isInverted ^ isWithinSet;
     }
@@ -223,17 +324,41 @@ class Regex {
 
   struct Token {
    public:
-    virtual State &generate(Regex &regex, State &preState) const = 0;
+    virtual State& generate(Regex& regex, State& preState) const = 0;
   };
 
   struct Container : Token {
+   private:
+    bool isEscaped = false;
+
+   protected:
+    bool isEscape(char ch) {
+      if (ch == '\\') {
+        isEscaped = true;
+        return true;
+      }
+      return false;
+    }
+
+    bool tryEscape(char& ch) {
+      bool oldIsEscaped = isEscaped;
+      if (isEscaped) {
+        isEscaped = false;
+        switch (ch) {
+          case 'n':
+            ch = '\n';
+            break;
+        }
+      }
+      return oldIsEscaped;
+    }
+
    public:
     /**
      * @return {bool}  : Should be finished after push or not.
      */
-    virtual bool push(ContainerStack &, size_t, char) = 0;
-    virtual bool push(ContainerStack &, size_t,
-                      std::unique_ptr<Container> &) = 0;
+    virtual bool push(ContainerStack&, size_t, char) = 0;
+    virtual bool push(ContainerStack&, size_t, std::unique_ptr<Container>&) = 0;
 
     virtual std::unique_ptr<Token> pop(size_t) = 0;
 
@@ -246,8 +371,8 @@ class Regex {
 
     explicit Char(char value) : value(value){};
 
-    State &generate(Regex &regex, State &preState) const override {
-      State &endState = regex.createState();
+    State& generate(Regex& regex, State& preState) const override {
+      State& endState = regex.createState();
       preState.addTransition(
           {std::make_unique<CharCondition>(value), &endState});
       return endState;
@@ -256,8 +381,8 @@ class Regex {
 
   struct Any : Token {
    public:
-    State &generate(Regex &regex, State &preState) const override {
-      State &endState = regex.createState();
+    State& generate(Regex& regex, State& preState) const override {
+      State& endState = regex.createState();
       preState.addTransition({std::make_unique<AnyCondition>(), &endState});
       return endState;
     };
@@ -267,52 +392,81 @@ class Regex {
    protected:
     std::list<std::unique_ptr<Token>> tokenList;
 
+    bool isLookahead = false;
+    bool isInverted = false;
+
    public:
-    State &generate(Regex &regex, State &preState) const override {
-      State *currentState = &preState;
-      for (const auto &token : tokenList) {
+    State& generate(Regex& regex, State& preState) const override {
+      if (isLookahead) {
+        State* currentState = &regex.createState();
+        State* startState = currentState;
+        for (const auto& token : tokenList) {
+          currentState = &token->generate(regex, *currentState);
+        }
+        State& endState = regex.createState();
+        preState.addTransition(
+            {std::make_unique<LookaheadCondition>(startState, isInverted),
+             &endState});
+        return endState;
+      }
+      State* currentState = &preState;
+      for (const auto& token : tokenList) {
         currentState = &token->generate(regex, *currentState);
       }
       return *currentState;
     };
 
-    bool push(ContainerStack &stack, size_t pos, char ch) override {
-      switch (ch) {
-        case '(':
-          stack.push(std::make_unique<Group>());
-          break;
-        case ')':
-          stack.finishTopContainer(pos);
-          break;
-        case '[':
-          stack.push(std::make_unique<CharSet>());
-          break;
-        case '|':
-          stack.push(std::make_unique<Alternation>(stack.popLastToken(pos)));
-          break;
-        case '.':
-          tokenList.push_back(std::make_unique<Any>());
-          break;
-        case '*':
-          tokenList.push_back(
-              std::make_unique<ZeroOrMore>(stack.popLastToken(pos)));
-          break;
-        case '?':
-          tokenList.push_back(
-              std::make_unique<ZeroOrOnce>(stack.popLastToken(pos)));
-          break;
-        case '+':
-          tokenList.push_back(
-              std::make_unique<OnceOrMore>(stack.popLastToken(pos)));
-          break;
-        default:
-          tokenList.push_back(std::make_unique<Char>(ch));
+    bool push(ContainerStack& stack, size_t pos, char ch) override {
+      if (!tryEscape(ch)) {
+        if (isEscape(ch)) return false;
+        switch (ch) {
+          case '(':
+            stack.push(std::make_unique<Group>());
+            return false;
+          case ')':
+            stack.finishTopContainer(pos);
+            return false;
+          case '[':
+            stack.push(std::make_unique<CharSet>());
+            return false;
+          case '|':
+            stack.push(std::make_unique<Alternation>(stack.popLastToken(pos)));
+            return false;
+          case '.':
+            tokenList.push_back(std::make_unique<Any>());
+            return false;
+          case '*':
+            tokenList.push_back(
+                std::make_unique<ZeroOrMore>(stack.popLastToken(pos)));
+            return false;
+          case '?':
+            if (tokenList.empty()) {
+              isLookahead = true;
+            } else
+              tokenList.push_back(
+                  std::make_unique<ZeroOrOnce>(stack.popLastToken(pos)));
+            return false;
+          case '=':
+            if (isLookahead && tokenList.empty()) break;
+          case '!':
+            if (isLookahead && tokenList.empty()) {
+              isInverted = true;
+              return false;
+            }
+          case '+':
+            tokenList.push_back(
+                std::make_unique<OnceOrMore>(stack.popLastToken(pos)));
+            return false;
+          default:
+            break;
+        }
       }
+      tokenList.push_back(std::make_unique<Char>(ch));
       return false;
     };
 
-    bool push(ContainerStack &, size_t,
-              std::unique_ptr<Container> &container) override {
+    bool push(ContainerStack&, size_t,
+              std::unique_ptr<Container>& container) override {
       tokenList.push_back(std::move(container));
       return false;
     }
@@ -328,58 +482,64 @@ class Regex {
 
   struct CharSet : Container {
    protected:
-    std::list<std::shared_ptr<const Condition>> conditionList;
+    std::list<std::shared_ptr<Condition>> conditionList;
+
+    CharRangeCondition* notFulfilledCharRangeCondition = nullptr;
 
    public:
     bool isInverted = false;
 
-    State &generate(Regex &regex, State &preState) const override {
-      State &endState = regex.createState();
+    State& generate(Regex& regex, State& preState) const override {
+      State& endState = regex.createState();
       preState.addTransition(
           {std::make_unique<CharSetCondition>(conditionList, isInverted),
            &endState});
       return endState;
     };
 
-    bool push(ContainerStack &stack, size_t pos, char ch) override {
-      CharRangeCondition *notFulfilledCharRangeCondition = nullptr;
-      switch (ch) {
-        case '-': {
-          if (notFulfilledCharRangeCondition)
-            throw std::runtime_error("Previous char range is not fulfilled: " +
-                                     std::to_string(pos));
-          const auto &lastCondition = conditionList.back();
-          conditionList.pop_back();
-          const auto *start =
-              dynamic_cast<const CharCondition *>(lastCondition.get());
-          if (start == nullptr)
-            throw std::runtime_error("Previous token must be a char: " +
-                                     std::to_string(pos));
-          auto charRangeCondition = std::make_unique<CharRangeCondition>(ch);
-          notFulfilledCharRangeCondition = charRangeCondition.get();
-          conditionList.push_back(std::move(charRangeCondition));
-          break;
-        }
-        case ']':
-          stack.finishTopContainer(pos);
-          break;
-        case '^':
-          if (conditionList.empty()) {
-            isInverted = true;
-            break;
+    bool push(ContainerStack& stack, size_t pos, char ch) override {
+      if (!tryEscape(ch)) {
+        if (isEscape(ch)) return false;
+        switch (ch) {
+          case '-': {
+            if (notFulfilledCharRangeCondition)
+              throw std::runtime_error(
+                  "Previous char range is not fulfilled: " +
+                  std::to_string(pos));
+            const auto& lastCondition = conditionList.back();
+            conditionList.pop_back();
+            const auto* start =
+                dynamic_cast<const CharCondition*>(lastCondition.get());
+            if (start == nullptr)
+              throw std::runtime_error("Previous token must be a char: " +
+                                       std::to_string(pos));
+            auto charRangeCondition = std::make_unique<CharRangeCondition>(ch);
+            notFulfilledCharRangeCondition = charRangeCondition.get();
+            conditionList.push_back(std::move(charRangeCondition));
+            return false;
           }
-        default:
-          if (notFulfilledCharRangeCondition) {
-            notFulfilledCharRangeCondition->end = ch;
-            notFulfilledCharRangeCondition = nullptr;
-          } else
-            conditionList.push_back(std::make_unique<CharCondition>(ch));
+          case ']':
+            stack.finishTopContainer(pos);
+            return false;
+          case '^':
+            if (conditionList.empty()) {
+              isInverted = true;
+              return false;
+            }
+          default:
+            break;
+        }
       }
+      if (notFulfilledCharRangeCondition) {
+        notFulfilledCharRangeCondition->end = ch;
+        notFulfilledCharRangeCondition = nullptr;
+      } else
+        conditionList.push_back(std::make_unique<CharCondition>(ch));
       return false;
     };
 
-    bool push(ContainerStack &, size_t pos,
-              std::unique_ptr<Container> &) override {
+    bool push(ContainerStack&, size_t pos,
+              std::unique_ptr<Container>&) override {
       throw std::runtime_error("Charset does not allow container type :" +
                                std::to_string(pos));
     }
@@ -401,30 +561,33 @@ class Regex {
                          std::unique_ptr<Token> right = nullptr)
         : left(std::move(left)), right(std::move(right)) {}
 
-    State &generate(Regex &regex, State &preState) const override {
-      State &endState = regex.createState();
+    State& generate(Regex& regex, State& preState) const override {
+      State& endState = regex.createState();
       left->generate(regex, preState).addTransition({nullptr, &endState});
       right->generate(regex, preState).addTransition({nullptr, &endState});
       return endState;
     };
 
-    bool push(ContainerStack &stack, size_t pos, char ch) override {
-      switch (ch) {
-        case '(':
-          stack.push(std::make_unique<Group>());
-          break;
-        case ')':
-          stack.finishTopContainer(pos);
-          break;
-        default:
-          right = std::make_unique<Char>(ch);
-          return true;
+    bool push(ContainerStack& stack, size_t pos, char ch) override {
+      if (!tryEscape(ch)) {
+        if (isEscape(ch)) return false;
+        switch (ch) {
+          case '(':
+            stack.push(std::make_unique<Group>());
+            return false;
+          case ')':
+            stack.finishTopContainer(pos);
+            return false;
+          default:
+            break;
+        }
       }
-      return false;
+      right = std::make_unique<Char>(ch);
+      return true;
     };
 
-    bool push(ContainerStack &, size_t,
-              std::unique_ptr<Container> &container) override {
+    bool push(ContainerStack&, size_t,
+              std::unique_ptr<Container>& container) override {
       right = std::move(container);
       return true;
     };
@@ -447,12 +610,11 @@ class Regex {
     explicit ZeroOrMore(std::unique_ptr<Token> token)
         : token(std::move(token)) {}
 
-    State &generate(Regex &regex, State &preState) const override {
-      State &endState = regex.createState();
+    State& generate(Regex& regex, State& preState) const override {
+      State& endState = regex.createState();
       preState.addTransition({nullptr, &endState});
-      State &tokenState = token->generate(regex, preState);
+      State& tokenState = token->generate(regex, preState);
       tokenState.addTransition({nullptr, &preState});
-      tokenState.addTransition({nullptr, &endState});
       return endState;
     };
   };
@@ -465,10 +627,10 @@ class Regex {
     explicit ZeroOrOnce(std::unique_ptr<Token> token)
         : token(std::move(token)) {}
 
-    State &generate(Regex &regex, State &preState) const override {
-      State &finalState = token->generate(regex, preState);
-      preState.addTransition({std::make_unique<AnyCondition>(), &finalState});
-      return finalState;
+    State& generate(Regex& regex, State& preState) const override {
+      State& endState = token->generate(regex, preState);
+      preState.addTransition({nullptr, &endState});
+      return endState;
     };
   };
 
@@ -480,9 +642,9 @@ class Regex {
     explicit OnceOrMore(std::unique_ptr<Token> token)
         : token(std::move(token)) {}
 
-    State &generate(Regex &regex, State &preState) const override {
-      State &endState = regex.createState();
-      State &tokenState = token->generate(regex, preState);
+    State& generate(Regex& regex, State& preState) const override {
+      State& endState = regex.createState();
+      State& tokenState = token->generate(regex, preState);
       tokenState.addTransition({nullptr, &preState});
       tokenState.addTransition({nullptr, &endState});
       return endState;
