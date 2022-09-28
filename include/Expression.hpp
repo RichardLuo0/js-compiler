@@ -1,5 +1,7 @@
 #pragma once
 
+#include <gtest/gtest.h>
+
 #include <iostream>
 #include <memory>
 #include <string>
@@ -12,6 +14,9 @@ class Expression {
 };
 
 class CommentExpression : public Expression {
+  FRIEND_TEST(Compile, MultiLineComment);
+  FRIEND_TEST(Compile, SingleLineComment);
+
  protected:
   const std::string value;
 

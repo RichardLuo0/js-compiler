@@ -47,19 +47,5 @@ add_executable(${PROJECT_NAME} "src/Main.cpp")
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}-lib)
 include(CPack)
 
-# Testing
-aux_source_directory(test TEST_SRC)
-if(TEST_SRC)
-  create_test_sourcelist(
-    TESTS
-    CommonTest.cpp
-    ${TEST_SRC}
-  )
-  add_executable(${PROJECT_NAME}-test ${TESTS})
-  remove(TESTS CommonTest.cpp)
-  target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME}-lib)
-  foreach(TEST_FILE ${TESTS})
-    cmake_path(GET TEST_FILE STEM TEST_NAME)
-    add_test(NAME test/${TEST_NAME} COMMAND ${PROJECT_NAME}-test test/${TEST_NAME})
-  endforeach()
-endif()
+# GTest
+include(cmake/GTest.cmake)
