@@ -4,10 +4,7 @@ Start = Comment;
 Comment = SingleLineComment | MultiLineComment;
 
 MultiLineComment = "/*" MultiLineCommentChars "*/";
-MultiLineCommentChars = /[^*]+/ | "*" PostAsteriskCommentChars | "";
-PostAsteriskCommentChars = MultiLineNotForwardSlashOrAsteriskChar MultiLineCommentChars
-                         | "*" PostAsteriskCommentChars;
-MultiLineNotForwardSlashOrAsteriskChar = /[^\/*]+/;
+MultiLineCommentChars = /([^*]|(\*(?!\/)))*/;
 
 SingleLineComment = "//" SingleLineCommentChars;
 SingleLineCommentChars = /[^\n]+/ | "";

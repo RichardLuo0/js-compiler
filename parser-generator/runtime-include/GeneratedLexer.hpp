@@ -1,6 +1,8 @@
 #pragma once
 
+#include <ios>
 #include <istream>
+#include <iterator>
 #include <memory>
 #include <regex>
 #include <stdexcept>
@@ -11,6 +13,7 @@
 #include <vector>
 
 #include "Regex.hpp"
+#include "RuntimeUtility.hpp"
 
 namespace GeneratedParser {
 using TokenType = int;
@@ -23,68 +26,51 @@ struct Token {
 
 class Lexer {
  protected:
-  std::istream& stream;
+  using Stream = Utility::ForwardBufferedInputStream;
+
+  Stream stream;
   Token currentToken;
 
-  struct TokenMatcher {
-    [[nodiscard]] virtual bool match(char) = 0;
-    virtual void reset() = 0;
+  struct Matcher {
+    [[nodiscard]] virtual bool match(Stream&) = 0;
+
     virtual std::string toString() = 0;
   };
 
-  struct RegexMatcher : public TokenMatcher {
+  struct RegexMatcher : public Matcher {
    protected:
     const std::string regexStr;
     const Regex regex;
-    std::unordered_set<const Regex::State*> currentState;
 
    public:
     explicit RegexMatcher(const std::string& regexStr)
-        : regexStr(regexStr), regex(Regex(regexStr)) {
-      currentState.insert(&regex.getStartState());
-    };
+        : regexStr(regexStr), regex(Regex(regexStr)){};
 
-    [[nodiscard]] bool match(char ch) override {
-      if (currentState.empty()) return false;
-      if ((ch == EOF || !regex.isGreedy) &&
-          Regex::isAnyStateMatch(currentState))
-        return true;
-      currentState = Regex::matchCharFromState(currentState, ch);
-      if (regex.isGreedy)
-        return currentState.size() == 1 &&
-               (*currentState.begin())->isFinalState();
-      return false;
-    }
-
-    void reset() override {
-      currentState.clear();
-      currentState.insert(&regex.getStartState());
+    [[nodiscard]] bool match(Stream& stream) override {
+      return regex.match(stream);
     }
 
     std::string toString() override { return regexStr; }
   };
 
-  struct StringMatcher : public TokenMatcher {
+  struct StringMatcher : public Matcher {
    protected:
     const std::string str;
-    int index = 0;
 
    public:
     explicit StringMatcher(std::string str) : str(std::move(str)){};
 
-    [[nodiscard]] bool match(char ch) override {
-      if (index <= -1 || ch == EOF) return false;
-      if (index >= static_cast<int>(str.size())) return true;
-      if (str[index++] != ch) index = -1;
-      return false;
+    [[nodiscard]] bool match(Stream& stream) override {
+      for (const char& ch : str) {
+        if (stream.get() != ch) return false;
+      }
+      return true;
     }
-
-    void reset() override { index = 0; }
 
     std::string toString() override { return str; }
   };
 
-  std::vector<std::unique_ptr<TokenMatcher>> matcherList;
+  std::vector<std::unique_ptr<Matcher>> matcherList;
 
   [[nodiscard]] virtual inline bool isEof(const char& ch) const {
     return ch == EOF;
@@ -101,46 +87,49 @@ class Lexer {
 
   explicit Lexer(std::istream& stream);
 
-  void readNextToken() {
-    static char currentChar = ' ';
-    if (isEof(currentChar)) {
+  template <class Iterable>
+  void readNextTokenExpect(const Iterable& matcherIndexIterable) {
+    if (stream.peek() == EOF) {
       currentToken = {eof, ""};
       return;
     }
 
-    while (isSpace(currentChar)) {
-      currentChar = static_cast<char>(stream.get());
+    while (isSpace(static_cast<char>(stream.peek()))) {
+      stream.read();
     }
+    stream.shrinkBufferToIndex();
 
-    // Look ahead
-    std::string value;
+    size_t startPos = stream.tellg();
     bool isMatched = false;
-    while (!isMatched) {
-      for (size_t i = 0; i < matcherList.size(); i++) {
-        auto& matcher = matcherList[i];
-        if (matcher->match(currentChar)) {
-          isMatched = true;
-          currentToken = {static_cast<TokenType>(i), value};
-          value.clear();
-          break;
-        }
+    for (const size_t& index : matcherIndexIterable) {
+      auto& matcher = matcherList[index];
+      if (matcher->match(stream)) {
+        isMatched = true;
+        currentToken = {static_cast<TokenType>(index),
+                        stream.getBufferToIndexAsString()};
+        break;
       }
-      if (isMatched) break;
-      if (isEof(currentChar)) throw std::runtime_error("Incomplete token");
-      value += currentChar;
-      currentChar = static_cast<char>(stream.get());
+      stream.seekg(startPos);
     }
+    if (!isMatched) throw std::runtime_error("Incomplete token");
 
-    for (auto& matcher : matcherList) {
-      matcher->reset();
+    stream.shrinkBufferToIndex();
+  }
+
+  void readNextTokenExpectEof() {
+    if (stream.peek() == EOF) {
+      currentToken = {eof, ""};
+      return;
     }
-  };
+    throw std::runtime_error("Expecting EOF but get " +
+                             std::to_string(stream.peek()));
+  }
 
   [[nodiscard]] Token getCurrentToken() const { return currentToken; };
 
   [[nodiscard]] inline std::string getMatcherStringFromIndex(
       size_t index) const {
-    return matcherList[index]->toString();
+    return matcherList.at(index)->toString();
   }
 };
 }  // namespace GeneratedParser

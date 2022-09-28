@@ -1,7 +1,7 @@
 #include "JsParser.hpp"
 
 #include "Exception.hpp"
-#include "Utils.hpp"
+#include "Utility.hpp"
 
 using namespace JsCompiler;
 using namespace GeneratedParser;
@@ -29,20 +29,21 @@ std::unique_ptr<Expression> JsParser::parseExpression() {
       continue;
     }
     const std::string& nonTerminal = node.symbol.getNonTerminal();
-    switch (Utils::hash(nonTerminal)) {
-      case Utils::hash("SingleLineCommentChars"):
+    switch (Utility::hash(nonTerminal)) {
+      case Utility::hash("SingleLineCommentChars"):
+      case Utility::hash("MultiLineCommentChars"):
         if (node.children.size() == 1) {
           expressionQueue.push(
               std::make_unique<CommentExpression>(node.children.front().value));
         }
         break;
-      case Utils::hash("Identifier"):
+      case Utility::hash("Identifier"):
         if (node.children.size() == 1) {
           expressionQueue.push(std::make_unique<IdentifierExpression>(
               node.children.front().value));
         }
         break;
-      case Utils::hash("Add"): {
+      case Utility::hash("Add"): {
         if (expressionQueue.size() < 2)
           throw UnexpectedTokenException(nonTerminal);
         std::unique_ptr<Expression> left = std::move(expressionQueue.front());
@@ -53,7 +54,7 @@ std::unique_ptr<Expression> JsParser::parseExpression() {
             "+", std::move(left), std::move(right)));
         break;
       }
-      case Utils::hash("Minus"): {
+      case Utility::hash("Minus"): {
         std::unique_ptr<Expression> left = std::move(expressionQueue.front());
         expressionQueue.pop();
         std::unique_ptr<Expression> right = std::move(expressionQueue.front());

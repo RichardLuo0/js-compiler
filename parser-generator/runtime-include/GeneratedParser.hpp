@@ -1,9 +1,7 @@
 #pragma once
 
-#include <list>
+#include <ranges>
 #include <stdexcept>
-#include <string>
-#include <utility>
 
 #include "GeneratedLLTable.hpp"
 #include "GeneratedLexer.hpp"
@@ -13,6 +11,10 @@ using Symbol = GeneratedLLTable::Symbol;
 
 class Parser {
  protected:
+  const std::unique_ptr<Lexer> lexer;
+
+  const GeneratedLLTable table;
+
   struct SymbolNode {
     const Symbol symbol;
     std::string value;
@@ -33,14 +35,10 @@ class Parser {
     }
   };
 
-  const std::unique_ptr<Lexer> lexer;
-
-  const GeneratedLLTable table;
-
  public:
   explicit Parser(std::unique_ptr<Lexer> lexer) : lexer(std::move(lexer)){};
 
-  [[nodiscard]] virtual inline bool isInputEnd(const Token& token) const {
+  [[nodiscard]] virtual inline bool isEof(const Token& token) const {
     return token.type == eof;
   }
 
@@ -50,18 +48,36 @@ class Parser {
     SymbolNode root{table.getStart()};
     SymbolNode end{GeneratedLLTable::end};
     std::stack<SymbolNode*> stack({&end, &root});
-    lexer->readNextToken();
+    lexer->readNextTokenExpect(
+        table.getCandidate(root.symbol.getNonTerminal()));
     while (!stack.empty()) {
-      const Token& currentToken = lexer->getCurrentToken();
-      const Symbol& symbol = isInputEnd(currentToken) ? GeneratedLLTable::end
-                                                 : Symbol{currentToken.type};
       SymbolNode& topSymbolNode = *stack.top();
-      if (topSymbolNode.symbol == symbol) {
-        topSymbolNode.value = currentToken.value;
-        if (!isInputEnd(currentToken)) lexer->readNextToken();
-        stack.pop();
-        continue;
+      const Token& currentToken = lexer->getCurrentToken();
+      const Symbol& symbol = isEof(currentToken) ? GeneratedLLTable::end
+                                                 : Symbol(currentToken.type);
+
+      if (topSymbolNode.symbol.type != Symbol::NonTerminal) {
+        if (topSymbolNode.symbol == symbol) {
+          topSymbolNode.value = currentToken.value;
+          stack.pop();
+          if (!isEof(currentToken)) {
+            if (!stack.empty()) {
+              const auto& topSymbol = stack.top()->symbol;
+              if (topSymbol.type == Symbol::NonTerminal)
+                lexer->readNextTokenExpect(
+                    table.getCandidate(topSymbol.getNonTerminal()));
+              else if (topSymbol.type == Symbol::Terminal)
+                lexer->readNextTokenExpect(std::list{topSymbol.getTerminal()});
+              else
+                lexer->readNextTokenExpectEof();
+            } else
+              throw std::runtime_error("Extra token");
+          }
+          continue;
+        }
+        throw std::runtime_error("Unexpected token");
       }
+
       const std::list<Symbol>& children =
           table.predict(topSymbolNode.symbol, symbol);
       stack.pop();
@@ -69,15 +85,12 @@ class Parser {
         for (const auto& symbol : children) {
           topSymbolNode.children.emplace_back(symbol, &topSymbolNode);
         }
-        for (auto it = topSymbolNode.children.rbegin();
-             it != topSymbolNode.children.rend(); it++) {
-          stack.push(&*it);
+        for (auto& it : std::ranges::reverse_view(topSymbolNode.children)) {
+          stack.push(&it);
         }
       } else
         epsilonNodeList.push_back(&topSymbolNode);
     }
-    if (!isInputEnd(lexer->getCurrentToken()))
-      throw std::runtime_error("Extra token");
 
     // Remove epsilon node
     for (SymbolNode* node : epsilonNodeList) {

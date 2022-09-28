@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace ParserGenerator::Utils {
+namespace ParserGenerator::Utility {
 inline std::string escapeInPlace(const std::string& str) {
   std::string str2;
   for (const auto& ch : str) {
@@ -11,4 +11,4 @@ inline std::string escapeInPlace(const std::string& str) {
   }
   return str2;
 }
-}  // namespace ParserGenerator::Utils
+}  // namespace ParserGenerator::Utility

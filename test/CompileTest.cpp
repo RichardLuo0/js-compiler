@@ -4,8 +4,8 @@
 
 using namespace JsCompiler;
 
-int test_Compile(int, char**) {
-  std::stringstream s(R"(// Hello world)");
+int test_CompileTest(int, char**) {
+  std::stringstream s(R"(/* H */)");
   JsIRBuilder builder(JsParser::create((GeneratedParser::Lexer::create(s))));
   builder.build();
   return 0;

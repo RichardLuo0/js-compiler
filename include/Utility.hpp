@@ -4,7 +4,7 @@
 #include <functional>
 #include <string>
 
-namespace JsCompiler::Utils {
+namespace JsCompiler::Utility {
 static const unsigned long hashStartNumber = 5381;
 static const unsigned long hashStepNumber = 5U;
 constexpr unsigned long hash(const char* str) {
@@ -15,4 +15,4 @@ constexpr unsigned long hash(const char* str) {
   return hash;
 }
 inline unsigned long hash(const std::string& str) { return hash(str.c_str()); }
-}  // namespace JsCompiler::Utils
+}  // namespace JsCompiler::Utility

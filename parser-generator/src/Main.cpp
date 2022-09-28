@@ -12,7 +12,7 @@
 #include "LLTable.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
-#include "Utils.hpp"
+#include "Utility.hpp"
 
 using namespace ParserGenerator;
 
@@ -22,27 +22,30 @@ using Symbol = Table::Symbol;
 
 std::string generateTableString(const Table& table) {
   std::string result = "{\n";
-  for (auto [key, right] : table.getTable()) {
-    result += "{{\"" + Utils::escapeInPlace(key.first) + "\"," +
-              (key.second.type == Symbol::Terminal
-                   ? "Symbol(" + std::to_string(key.second.getTerminal()) + ")}"
-                   : "end}") +
-              ",{";
-    for (const Symbol& symbol : right) {
-      if (&symbol != &right.front()) result += ',';
-      switch (symbol.type) {
-        case Symbol::Terminal:
-          result += "Symbol(" + std::to_string(symbol.getTerminal()) + ")";
-          break;
-        case Symbol::NonTerminal:
-          result += "Symbol(\"" +
-                    Utils::escapeInPlace(symbol.getNonTerminal()) + "\")";
-          break;
-        case Symbol::End:
-          result += "end";
-        default:
-          break;
+  for (const auto& [nonTerminal, map] : table.getTable()) {
+    result += "{\"" + Utility::escapeInPlace(nonTerminal) + "\",\n{";
+    for (const auto& [symbol, right] : map) {
+      result +=
+          "{" + (symbol.type == Symbol::Terminal
+                     ? "Symbol(" + std::to_string(symbol.getTerminal()) + "),{"
+                     : "end,{");
+      for (const Symbol& symbol : right) {
+        if (&symbol != &right.front()) result += ',';
+        switch (symbol.type) {
+          case Symbol::Terminal:
+            result += "Symbol(" + std::to_string(symbol.getTerminal()) + ")";
+            break;
+          case Symbol::NonTerminal:
+            result += "Symbol(\"" +
+                      Utility::escapeInPlace(symbol.getNonTerminal()) + "\")";
+            break;
+          case Symbol::End:
+            result += "end";
+          default:
+            break;
+        }
       }
+      result += "}},\n";
     }
     result += "}},\n";
   }
@@ -59,10 +62,10 @@ std::string generateTerminalString(
     result += "matcherList.push_back(std::make_unique";
     switch (terminal.type) {
       case TerminalType::String:
-        result += "<StringMatcher>(\"" + Utils::escapeInPlace(terminal.value);
+        result += "<StringMatcher>(\"" + Utility::escapeInPlace(terminal.value);
         break;
       case TerminalType::Regex:
-        result += "<RegexMatcher>(\"" + Utils::escapeInPlace(terminal.value);
+        result += "<RegexMatcher>(\"" + Utility::escapeInPlace(terminal.value);
         break;
       default:
         throw std::runtime_error("Unknown terminal");
@@ -85,8 +88,7 @@ void outputToStream(const Table& table,
       "Lexer::Lexer", std::list<std::string>{"std::istream& stream"},
       "stream(stream)", generateTerminalString(terminalList)));
   file.addTopLevelExpression(std::make_unique<CppMethod>(
-      "GeneratedLLTable::GeneratedLLTable", std::list<std::string>{},
-      "LLTable(\"" + table.getStart().getNonTerminal() + "\")",
+      "void", "GeneratedLLTable::generateTable", std::list<std::string>{},
       "table = " + generateTableString(table) + ";\n"));
   output << file.output();
 }
@@ -115,7 +117,7 @@ int main(int argc, const char** argv) {
   std::unordered_map<std::string, std::string> options =
       parseOption(argc - 1, argv + 1, {});
 
-  if (!options.count("default"))
+  if (!options.contains("default"))
     throw std::runtime_error("No bnf file provided");
 
   std::ifstream bnfFile(options["default"]);
@@ -145,7 +147,7 @@ int main(int argc, const char** argv) {
     return nonTerminal + std::to_string(subNonTerminalNameMap[nonTerminal]);
   });
 
-  if (options.count("-o")) {
+  if (options.contains("-o")) {
     std::ofstream outputFile(options["-o"]);
     outputToStream(table, terminalList, outputFile);
   } else {

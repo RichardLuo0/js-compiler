@@ -62,30 +62,15 @@ class LLTable {
   static inline const Symbol end{Symbol::End};
 
  protected:
-  struct PairHash {
-    template <class T1>
-    std::size_t operator()(const std::pair<T1, Symbol>& pair) const {
-      return std::hash<T1>()(pair.first) ^ typename Symbol::Hash()(pair.second);
-    }
-  };
-
   Symbol start;
-  // Key is hash(non-terminal + terminal), value is produced symbol
-  std::unordered_map<std::pair<NonTerminalType, Symbol>, std::list<Symbol>,
-                     PairHash>
+  std::unordered_map<
+      NonTerminalType,
+      std::unordered_map<Symbol, std::list<Symbol>, typename Symbol::Hash>>
       table;
 
  public:
   explicit LLTable(NonTerminalType start) : start(std::move(start)) {}
 
   const Symbol& getStart() const { return start; }
-
-  std::list<Symbol> predict(const Symbol& currentSymbol,
-                            const Symbol& nextInput) const noexcept(false) {
-    assert(currentSymbol.type == Symbol::NonTerminal);
-    auto key = std::make_pair(currentSymbol.getNonTerminal(), nextInput);
-    if (!table.count(key)) throw std::runtime_error("No match prediction");
-    return table.at(key);
-  }
 };
 }  // namespace GeneratedParser
