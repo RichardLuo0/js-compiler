@@ -1,4 +1,3 @@
-#include "GeneratedLexer.hpp"
 #include "JsIRBuilder.hpp"
 #include "JsParser.hpp"
 

@@ -5,11 +5,7 @@
 #include <string>
 #include <utility>
 
-#include "GeneratedLexer.hpp"
-
 namespace JsCompiler {
-using Token = GeneratedParser::Token;
-
 struct CompileException : std::exception {
  protected:
   const std::string message;

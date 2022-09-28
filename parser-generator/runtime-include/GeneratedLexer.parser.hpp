@@ -12,8 +12,8 @@
 #include <variant>
 #include <vector>
 
-#include "Regex.hpp"
-#include "RuntimeUtility.hpp"
+#include "Regex.parser.hpp"
+#include "Utility.parser.hpp"
 
 namespace GeneratedParser {
 using TokenType = int;

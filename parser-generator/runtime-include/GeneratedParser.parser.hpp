@@ -3,8 +3,8 @@
 #include <ranges>
 #include <stdexcept>
 
-#include "GeneratedLLTable.hpp"
-#include "GeneratedLexer.hpp"
+#include "GeneratedLLTable.parser.hpp"
+#include "GeneratedLexer.parser.hpp"
 
 namespace GeneratedParser {
 using Symbol = GeneratedLLTable::Symbol;

@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <utility>
 
-#include "RuntimeUtility.hpp"
+#include "Utility.parser.hpp"
 
 namespace GeneratedParser {
 class Regex {
@@ -198,8 +198,8 @@ class Regex {
                         }) != currentState.end();
   }
 
-  [[nodiscard]] bool match(std::string& str) const {
-    StringController controller(str);
+  [[nodiscard]] bool match(std::string str) const {
+    StringController controller(std::move(str));
     return Regex::match(getStartState(), controller, _isGreedy);
   }
 

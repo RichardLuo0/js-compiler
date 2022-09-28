@@ -80,9 +80,9 @@ void outputToStream(const Table& table,
                     std::ostream& output) {
   CppFile file;
   file.addTopLevelExpression(
-      std::make_unique<CppInclude>("GeneratedLexer.hpp"));
+      std::make_unique<CppInclude>("GeneratedLexer.parser.hpp"));
   file.addTopLevelExpression(
-      std::make_unique<CppInclude>("GeneratedLLTable.hpp"));
+      std::make_unique<CppInclude>("GeneratedLLTable.parser.hpp"));
   file.addTopLevelExpression(std::make_unique<CppUsing>("GeneratedParser"));
   file.addTopLevelExpression(std::make_unique<CppMethod>(
       "Lexer::Lexer", std::list<std::string>{"std::istream& stream"},

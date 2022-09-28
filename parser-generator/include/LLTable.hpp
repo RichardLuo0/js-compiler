@@ -15,7 +15,7 @@
 #include <variant>
 #include <vector>
 
-#include "CommonLLTable.hpp"
+#include "CommonLLTable.parser.hpp"
 
 namespace ParserGenerator {
 /*

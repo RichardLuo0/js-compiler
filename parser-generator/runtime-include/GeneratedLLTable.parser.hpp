@@ -4,7 +4,7 @@
 #include <ranges>
 #include <unordered_map>
 
-#include "CommonLLTable.hpp"
+#include "CommonLLTable.parser.hpp"
 
 namespace GeneratedParser {
 class GeneratedLLTable : public LLTable<std::string, size_t> {
