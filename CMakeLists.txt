@@ -7,7 +7,7 @@ add_compile_options(-Wall)
 include(cmake/IWYU.cmake)
 
 # Generate parser
-set(${parser-generator_DISABLE_TESTS} false)
+set(parser-generator_DISABLE_TESTS TRUE)
 add_subdirectory(parser-generator EXCLUDE_FROM_ALL)
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/Parser.cpp

@@ -21,8 +21,8 @@ target_precompile_headers(
 add_executable(${PROJECT_NAME} "src/Main.cpp")
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}-lib)
 
-if (${${PROJECT_NAME}_DISABLE_TESTS}) 
-  return() 
+if (${${PROJECT_NAME}_DISABLE_TESTS})
+  return()
 endif()
 aux_source_directory(test TEST_SRC)
 if(TEST_SRC)
