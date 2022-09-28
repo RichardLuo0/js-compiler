@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 project(js-compiler)
 
 enable_testing()
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 add_compile_options(-Wall)
 include(cmake/IWYU.cmake)
 
@@ -16,10 +16,12 @@ add_custom_command(
   MAIN_DEPENDENCY parser-generator
   DEPENDS bnf/js.ebnf
 )
+aux_source_directory(parser-generator/runtime-include PASER_GENERATOR_HEADER)
 include_directories(parser-generator/runtime-include)
+file(GLOB PARSER_GENERATOR_RUNTIME parser-generator/runtime-include/*.hpp)
 
 # Link LLVM
-execute_process(COMMAND llvm-config --libs core engine nativecodegen x86asmparser mcjit passes OUTPUT_VARIABLE LLVM_LIBS)
+execute_process(COMMAND llvm-config --libs core OUTPUT_VARIABLE LLVM_LIBS)
 if (NOT LLVM_LIBS)
   message(FATAL_ERROR "No llvm found in path")
 endif()
@@ -32,11 +34,20 @@ remove(SRC "src/Main.cpp")
 list(APPEND SRC ${CMAKE_CURRENT_BINARY_DIR}/Parser.cpp)
 add_library(${PROJECT_NAME}-lib ${SRC})
 target_link_libraries(${PROJECT_NAME}-lib ${LLVM_LIBS})
+target_precompile_headers(
+  ${PROJECT_NAME}-lib 
+  PRIVATE
+  ${PARSER_GENERATOR_RUNTIME} 
+  include/Exception.hpp
+  include/Utility.hpp
+)
 
+# Generate executable
 add_executable(${PROJECT_NAME} "src/Main.cpp")
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}-lib)
 include(CPack)
 
+# Testing
 aux_source_directory(test TEST_SRC)
 if(TEST_SRC)
   create_test_sourcelist(
