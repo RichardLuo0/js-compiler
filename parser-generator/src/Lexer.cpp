@@ -1,5 +1,7 @@
 #include "Lexer.hpp"
 
+#include "Utility.hpp"
+
 using namespace ParserGenerator;
 
 inline bool isInNonTerminal(unsigned char c) {
@@ -64,7 +66,7 @@ void BNFLexer::readNextToken() noexcept(false) {
         value += currentChar;
         read(currentChar, stream);
       }
-      currentToken = {RegexTerminal, value};
+      currentToken = {RegexTerminal, Utility::escape(value)};
       return;
     }
     case '(': {

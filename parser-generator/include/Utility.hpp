@@ -3,7 +3,7 @@
 #include <string>
 
 namespace ParserGenerator::Utility {
-inline std::string escapeInPlace(const std::string& str) {
+inline std::string escape(const std::string& str) {
   std::string str2;
   for (const auto& ch : str) {
     if (ch == '"' || ch == '\\') str2.push_back('\\');

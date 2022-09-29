@@ -23,7 +23,7 @@ using Symbol = Table::Symbol;
 std::string generateTableString(const Table& table) {
   std::string result = "{\n";
   for (const auto& [nonTerminal, map] : table.getTable()) {
-    result += "{\"" + Utility::escapeInPlace(nonTerminal) + "\",\n{";
+    result += "{\"" + Utility::escape(nonTerminal) + "\",\n{";
     for (const auto& [symbol, right] : map) {
       result +=
           "{" + (symbol.type == Symbol::Terminal
@@ -36,8 +36,8 @@ std::string generateTableString(const Table& table) {
             result += "Symbol(" + std::to_string(symbol.getTerminal()) + ")";
             break;
           case Symbol::NonTerminal:
-            result += "Symbol(\"" +
-                      Utility::escapeInPlace(symbol.getNonTerminal()) + "\")";
+            result +=
+                "Symbol(\"" + Utility::escape(symbol.getNonTerminal()) + "\")";
             break;
           case Symbol::End:
             result += "end";
@@ -62,10 +62,10 @@ std::string generateTerminalString(
     result += "matcherList.push_back(std::make_unique";
     switch (terminal.type) {
       case TerminalType::String:
-        result += "<StringMatcher>(\"" + Utility::escapeInPlace(terminal.value);
+        result += "<StringMatcher>(\"" + terminal.value;
         break;
       case TerminalType::Regex:
-        result += "<RegexMatcher>(\"" + Utility::escapeInPlace(terminal.value);
+        result += "<RegexMatcher>(\"" + terminal.value;
         break;
       default:
         throw std::runtime_error("Unknown terminal");
