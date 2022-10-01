@@ -484,7 +484,7 @@ class Regex {
    protected:
     std::list<std::shared_ptr<Condition>> conditionList;
 
-    CharRangeCondition* notFulfilledCharRangeCondition = nullptr;
+    CharRangeCondition* charRangeToBeFulfilled = nullptr;
 
    public:
     bool isInverted = false;
@@ -502,11 +502,11 @@ class Regex {
         if (isEscape(ch)) return false;
         switch (ch) {
           case '-': {
-            if (notFulfilledCharRangeCondition)
+            if (charRangeToBeFulfilled)
               throw std::runtime_error(
                   "Previous char range is not fulfilled: " +
                   std::to_string(pos));
-            const auto& lastCondition = conditionList.back();
+            auto lastCondition = conditionList.back();
             conditionList.pop_back();
             const auto* start =
                 dynamic_cast<const CharCondition*>(lastCondition.get());
@@ -514,7 +514,7 @@ class Regex {
               throw std::runtime_error("Previous token must be a char: " +
                                        std::to_string(pos));
             auto charRangeCondition = std::make_unique<CharRangeCondition>(ch);
-            notFulfilledCharRangeCondition = charRangeCondition.get();
+            charRangeToBeFulfilled = charRangeCondition.get();
             conditionList.push_back(std::move(charRangeCondition));
             return false;
           }
@@ -530,9 +530,9 @@ class Regex {
             break;
         }
       }
-      if (notFulfilledCharRangeCondition) {
-        notFulfilledCharRangeCondition->end = ch;
-        notFulfilledCharRangeCondition = nullptr;
+      if (charRangeToBeFulfilled) {
+        charRangeToBeFulfilled->end = ch;
+        charRangeToBeFulfilled = nullptr;
       } else
         conditionList.push_back(std::make_unique<CharCondition>(ch));
       return false;
