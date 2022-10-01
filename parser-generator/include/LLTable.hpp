@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <deque>
 #include <functional>
+#include <iostream>
 #include <list>
 #include <memory>
 #include <optional>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "CommonLLTable.parser.hpp"
+#include "Utility.hpp"
 
 namespace ParserGenerator {
 /*
@@ -62,6 +64,28 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
     std::list<Edge> edges;
     Symbol symbol = CommonLLTable::end;
   };
+
+  void debugOutput(std::list<Production>& grammar) {
+    for (auto& production : grammar) {
+      std::cout << production.left << "\t";
+      for (auto& symbol : production.right) {
+        switch (symbol.type) {
+          case Symbol::Terminal:
+            std::cout << std::to_string(symbol.getTerminal());
+            break;
+          case Symbol::NonTerminal:
+            std::cout << symbol.getNonTerminal();
+            break;
+          case Symbol::End:
+            std::cout << "end";
+          default:
+            break;
+        }
+        std::cout << " ";
+      }
+      std::cout << std::endl;
+    }
+  }
 
   auto transformToLLGrammar(
       std::list<Production>& grammar,
@@ -112,18 +136,21 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
         // DFS
         std::stack<Node*> pathStack;
         std::unordered_map<const Node*, Edge*> path;
-        std::stack<Node*> traverseStack({terminalNode});
+        Utility::IterableStack<Node*> traverseStack({terminalNode});
         while (!traverseStack.empty()) {
           Node& node = *traverseStack.top();
           visited.insert(&node);
           traverseStack.pop();
           size_t size = traverseStack.size();
-          typename std::list<Edge>::iterator it = node.edges.begin();
+          auto it = node.edges.begin();
           while (it != node.edges.end()) {
             Edge& edge = *it;
+            path[&node] = &edge;
             if (!visited.contains(edge.to)) {
-              traverseStack.push(edge.to);
-              path[&node] = &edge;
+              const auto& container = traverseStack.getContainer();
+              if (std::find(container.begin(), container.end(), edge.to) ==
+                  container.end())
+                traverseStack.push(edge.to);
             } else {
               if (path.contains(edge.to)) {
                 isChanged = true;
@@ -136,8 +163,8 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
                       edge.to->symbol.getNonTerminal();
                   const NonTerminalType* preCopiedNonTerminal = nullptr;
                   Node* currentNode = edge.to;
-                  Production& firstP = *path[currentNode]->production;
-                  if (edge.to->edges.size() > 1) {
+                  Production& firstP = *path.at(currentNode)->production;
+                  if (currentNode->edges.size() > 1) {
                     NonTerminalType left = node.symbol.getNonTerminal();
                     NonTerminalType newLeft2 = createSubNonTerminal(left);
                     grammar.push_back(
@@ -149,19 +176,19 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
                   // If no right left
                   if (firstP.right.size() <= 0)
                     firstP.right.push_back(CommonLLTable::end);
-                  currentNode = path[currentNode]->to;
+                  currentNode = path.at(currentNode)->to;
                   while (currentNode != edge.to) {
                     if (preCopiedNonTerminal != nullptr) {
                       if (currentNode->edges.size() > 1) {
                         NonTerminalType left = node.symbol.getNonTerminal();
                         NonTerminalType newLeft = createSubNonTerminal(left);
-                        auto newRight = path[currentNode]->production->right;
+                        auto newRight = path.at(currentNode)->production->right;
                         newRight.pop_front();
                         newRight.push_front(Symbol(*preCopiedNonTerminal));
                         grammar.push_back({newLeft, newRight});
                         preCopiedNonTerminal = &newLeft;
                       } else {
-                        auto& right = path[currentNode]->production->right;
+                        auto& right = path.at(currentNode)->production->right;
                         right.pop_front();
                         right.push_front(Symbol(*preCopiedNonTerminal));
                         preCopiedNonTerminal = nullptr;
@@ -169,19 +196,17 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
                     } else if (currentNode->edges.size() > 1) {
                       NonTerminalType left = node.symbol.getNonTerminal();
                       NonTerminalType newLeft = createSubNonTerminal(left);
-                      auto newRight = path[currentNode]->production->right;
+                      auto newRight = path.at(currentNode)->production->right;
                       newRight.pop_front();
                       newRight.push_front(Symbol(*preCopiedNonTerminal));
                       grammar.push_back({newLeft, newRight});
                       preCopiedNonTerminal = &newLeft;
                     }
-                    currentNode = path[currentNode]->to;
+                    currentNode = path.at(currentNode)->to;
                   }
                 }
 
                 // Node to edge.to
-                p.left = newLeft;
-                grammar.push_back({newLeft, {CommonLLTable::end}});
                 size_t i = 0;
                 for (auto it = grammar.begin(); i < grammarSize; i++, it++) {
                   Production& matchP = *it;
@@ -193,6 +218,8 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
                     grammar.push_back({p.left, newRight});
                   }
                 }
+                p.left = newLeft;
+                grammar.push_back({newLeft, {CommonLLTable::end}});
                 // Remove from graph
                 it = node.edges.erase(it);
               }
@@ -244,10 +271,9 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
           } while (production == production2);
 
           // Share the last production
-          Production& lastProduction = *edges.back()->production;
-          const NonTerminalType& left = lastProduction.left;
+          const NonTerminalType& left = edges.back()->production->left;
           NonTerminalType newLeft = createSubNonTerminal(left);
-          lastProduction.right = {startNode->symbol, Symbol(newLeft)};
+          grammar.push_back({left, {startNode->symbol, Symbol(newLeft)}});
 
           extractFront(--it, *startNode, newLeft, grammar,
                        createSubNonTerminal);
@@ -269,9 +295,8 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
             Edge* edge = *it;
             const bool isFirstEdge = it == extractStart;
             const bool isLastEdge = edge == *edges.rbegin();
-            const bool isCreateNewP = isLastEdge ||
-                                      edge->to->edges.size() > 1 ||
-                                      preNewNonTerminal != nullptr;
+            const bool isCreateNewP =
+                edge->to->edges.size() > 1 || preNewNonTerminal != nullptr;
             auto newRight = edge->production->right;
             if (isFirstEdge)
               newRight.pop_front();
@@ -280,15 +305,16 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
               newRight.push_front(Symbol(*preNewNonTerminal));
             }
             if (newRight.empty()) newRight.push_back(CommonLLTable::end);
-            if (isCreateNewP) {
+            if (isLastEdge) {
+              edge->production->left = lastNewNonTerminal;
+              edge->production->right = newRight;
+            } else if (isCreateNewP) {
               NonTerminalType newLeft =
-                  isLastEdge ? lastNewNonTerminal
-                             : createSubNonTerminal(edge->production->left);
+                  createSubNonTerminal(edge->production->left);
               preNewNonTerminal = &newLeft;
               grammar.push_back({newLeft, newRight});
-              if (!isLastEdge)
-                edge->production->right = {extractStartNode.symbol,
-                                           Symbol(newLeft)};
+              edge->production->right = {extractStartNode.symbol,
+                                         Symbol(newLeft)};
             } else
               edge->production->right = newRight;
             it++;
@@ -316,11 +342,12 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
                 isChanged = true;
                 newNextNodePath.extractCommonFactor(nextNodePath, grammar,
                                                     createSubNonTerminal);
-              } else
+              } else {
+                visitedAfterTerminal.insert(edge.to);
                 traverseStack.push(edge.to);
+              }
               nextNodePath = newNextNodePath;
             }
-          visitedAfterTerminal.insert(&node);
           visited.insert(&node);
         }
       }
