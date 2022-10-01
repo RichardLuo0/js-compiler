@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "CppGenerator.hpp"
 #include "LLTable.hpp"
@@ -124,6 +125,7 @@ int main(int argc, const char** argv) {
   BNFParser parser(BNFLexer::create(bnfFile));
 
   // Convert terminal to size_t to avoid outputting very long string
+  std::unordered_map<TerminalType, size_t> terminalMap;
   std::list<TerminalType> terminalList;
   std::list<Production> productionList;
   for (auto& production : parser.parse()) {
@@ -131,8 +133,13 @@ int main(int argc, const char** argv) {
     for (auto& symbol : production.right) {
       if (symbol.type == BNFParser::Symbol::Terminal) {
         const auto& terminal = symbol.getTerminal();
-        right.emplace_back(terminalList.size());
-        terminalList.push_back(terminal);
+        if (!terminalMap.contains(terminal)) {
+          size_t index = terminalList.size();
+          right.emplace_back(index);
+          terminalList.push_back(terminal);
+          terminalMap[terminal] = index;
+        } else
+          right.emplace_back(terminalMap.at(terminal));
       } else if (symbol.type == BNFParser::Symbol::NonTerminal)
         right.emplace_back(symbol.getNonTerminal());
       else
