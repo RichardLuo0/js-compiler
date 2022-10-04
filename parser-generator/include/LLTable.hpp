@@ -26,48 +26,26 @@ namespace ParserGenerator {
  */
 template <typename NonTerminalType, typename TerminalType>
 class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
-  using CommonLLTable = GeneratedParser::LLTable<NonTerminalType, TerminalType>;
+  using LLTableBase = GeneratedParser::LLTable<NonTerminalType, TerminalType>;
 
  public:
   struct Production;
-  using Symbol = typename CommonLLTable::Symbol;
+  using Symbol = typename LLTableBase::Symbol;
   using SymbolSet = std::unordered_set<Symbol, typename Symbol::Hash>;
   using PreviousSet = std::unordered_set<const Production*>;
 
-  struct ProductionBase {
+  struct Production {
     NonTerminalType left;
     std::list<Symbol> right;
 
-    ProductionBase(NonTerminalType left, std::list<Symbol> right)
+    Production(NonTerminalType left, std::list<Symbol> right)
         : left(left), right(right) {}
   };
 
-  struct Production : public ProductionBase {
-    friend class LLTable;
-
-   protected:
-    SymbolSet firstSet;
-
-   public:
-    Production(NonTerminalType left, std::list<Symbol> right)
-        : ProductionBase(left, right) {}
-  };
-
  protected:
-  struct Node;
-  struct Edge {
-    Production* production;
-    Node* to;
-  };
-
-  struct Node {
-    std::list<Edge> edges;
-    Symbol symbol = CommonLLTable::end;
-  };
-
-  void debugOutput(std::list<Production>& grammar) {
+  void debugPrint(const std::list<Production>& grammar) {
     for (auto& production : grammar) {
-      std::cout << production.left << "\t";
+      std::cout << production.left << ", ";
       for (auto& symbol : production.right) {
         switch (symbol.type) {
           case Symbol::Terminal:
@@ -87,12 +65,49 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
     }
   }
 
+  void removeUnusedProduction(std::list<Production>& grammar) {
+    std::list<Production> optimizedGrammar;
+    std::unordered_set<Symbol, typename Symbol::Hash> visited{this->start};
+    std::stack<const Symbol*> traverseStack({&this->start});
+    while (!traverseStack.empty()) {
+      const Symbol& symbol = *traverseStack.top();
+      traverseStack.pop();
+      for (auto& p : grammar) {
+        if (p.left == symbol.getNonTerminal()) {
+          optimizedGrammar.push_back(p);
+          for (auto& symbol : p.right) {
+            if (symbol.type == Symbol::NonTerminal &&
+                !visited.contains(symbol)) {
+              visited.insert(symbol);
+              traverseStack.push(&symbol);
+            }
+          }
+        }
+      }
+    }
+    grammar = optimizedGrammar;
+  }
+
+  struct Node;
+  struct Edge {
+    Production* production;
+    Node* to;
+  };
+
+  struct Node {
+    std::list<Edge> edges;
+    Symbol symbol = LLTableBase::end;
+  };
+
   auto transformToLLGrammar(
       std::list<Production>& grammar,
       const std::function<NonTerminalType(NonTerminalType)>&
           createSubNonTerminal) {
+    // Fixed point iteration
     bool isChanged = true;
-    // First is used to store all nodes, second is used to record terminal nodes
+
+    // A graph to represent the first set. The first of the pair is used to
+    // store all nodes, the second of the pair is used to record terminal nodes.
     std::pair<std::unordered_map<Symbol, Node, typename Symbol::Hash>,
               std::unordered_set<Node*>>
         graphInfo;
@@ -472,7 +487,8 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
   LLTable(NonTerminalType start, std::list<Production>& grammar,
           const std::function<NonTerminalType(NonTerminalType)>&
               createSubNonTerminal)
-      : CommonLLTable(std::move(start)) {
+      : LLTableBase(std::move(start)) {
+    removeUnusedProduction(grammar);
     const auto& graphInfo = transformToLLGrammar(grammar, createSubNonTerminal);
     createFirstSet(graphInfo.second);
     createFollowSet(grammar);
