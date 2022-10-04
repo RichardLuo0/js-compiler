@@ -312,12 +312,16 @@ class Regex {
         : conditionList(std::move(conditionList)), isInverted(isInverted){};
 
     bool operator()(Controller& controller) const override {
+      size_t index = controller.record();
       bool isWithinSet =
-          std::find_if(
-              conditionList.begin(), conditionList.end(),
-              [&controller](const std::shared_ptr<Condition>& condition) {
-                return condition->operator()(controller);
-              }) != conditionList.end();
+          std::find_if(conditionList.begin(), conditionList.end(),
+                       [&controller,
+                        &index](const std::shared_ptr<Condition>& condition) {
+                         bool isMatched = condition->operator()(controller);
+                         controller.restore(index);
+                         return isMatched;
+                       }) != conditionList.end();
+      controller.consume();
       return isInverted ^ isWithinSet;
     }
   };
