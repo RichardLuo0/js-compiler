@@ -3,7 +3,8 @@ project(js-compiler)
 
 enable_testing()
 set(CMAKE_CXX_STANDARD 20)
-add_compile_options(-Wall)
+add_compile_options(-Wall -Wfatal-errors)
+add_link_options(-fuse-ld=lld)
 set(${PROJECT_NAME}_ENTRY "src/Main.cpp")
 include(cmake/IWYU.cmake)
 
