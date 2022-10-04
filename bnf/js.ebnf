@@ -1,4 +1,31 @@
-Start = Comment;
+Start = Statement | Comment;
+
+(* Lexical *)
+NullLiteral = "null";
+
+(* UnicodeEscapeSequence = "u" Hex4Digits | "u{" CodePoint "}";
+Hex4Digits = HexDigit HexDigit HexDigit HexDigit;
+HexDigit = /[0-9a-fA-F]/;
+CodePoint = HexDigits; *)
+
+(* Expression *)
+PrimaryExpression = "this"
+                  | IdentifierReference
+                  | Literal;
+
+Literal = NullLiteral
+        | BooleanLiteral
+        | NumericLiteral
+        | StringLiteral;
+
+ReservedWord = "await" | "break" | "case" | "catch" | "class"
+             | "const" | "continue" | "debugger" |"default" | "delete"
+             | "do" | "else" | "enum" | "export" | "extends"
+             | "false" | "finally" | "for" | "function" | "if"
+             | "import" | "in" | "instanceof" | "new" | "null"
+             | "return" | "super" | "switch" | "this" | "throw"
+             | "true" | "try" | "typeof" | "var" | "void"
+             | "while" | "with" | "yield";
 
 (* Comment *)
 Comment = SingleLineComment | MultiLineComment;
@@ -7,4 +34,41 @@ MultiLineComment = "/*" MultiLineCommentChars "*/";
 MultiLineCommentChars = /([^*]|(\*(?!\/)))*/;
 
 SingleLineComment = "//" SingleLineCommentChars;
-SingleLineCommentChars = /[^\n]+/ | "";
+SingleLineCommentChars = /[^\n]*/;
+
+(* Identifier *)
+IdentifierReference = Identifier | "yield" | "await";
+BindingIdentifier = Identifier | "yield" | "await";
+Identifier = [/[$_A-z]+/ ReservedWord];
+(* IdentifierName = IdentifierStart | IdentifierName | IdentifierPart;
+IdentifierStart = IdentifierStartChar | "\\" UnicodeEscapeSequence;
+IdentifierStartChar = UnicodeIDStart | "$" | "_"; *)
+
+(* Assignment *)
+AssignmentExpression = ConditionalExpression
+                     | YieldExpression
+                     | ArrowFunction
+                     | AsyncArrowFunction
+                     | LeftHandSideExpression; (* TODO *)
+LeftHandSideExpression = NewExpression
+                       | CallExpression
+                       | OptionalExpression;
+NewExpression = MemberExpression | "new" NewExpression;
+MemberExpression = PrimaryExpression; (* TODO *)
+
+(* Statement *)
+Statement = VariableStatement;
+
+(* Variable Statement *)
+VariableStatement = "var" VariableDeclarationList;
+VariableDeclarationList = VariableDeclaration | VariableDeclarationList "," VariableDeclaration;
+VariableDeclaration = BindingIdentifier | BindingIdentifier Initializer | BindingPattern Initializer;
+BindingPattern = ObjectBindingPattern | ArrayBindingPattern;
+ObjectBindingPattern = "{" "}";
+                     (* | "{" BindingRestProperty "}"
+                     | "{" BindingPropertyList "}"
+                     | "{" BindingPropertyList "," BindingRestProperty "}"; *)
+ArrayBindingPattern = "[" Elision BindingRestElement "]";
+                    (* | "[" BindingElementList "]"
+                    | "[" BindingElementList "," Elisionopt BindingRestElement "]"; *)
+Initializer = "=" AssignmentExpression;
