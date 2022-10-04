@@ -9,7 +9,7 @@
 
 namespace ParserGenerator {
 struct TerminalType {
-  enum Type { Regex, String } type;
+  enum Type { String, Regex, RegexExclude } type;
   std::string value;
 
   bool operator==(const TerminalType& another) const {
@@ -29,7 +29,7 @@ class BNFParser {
   using Table = LLTable<std::string, TerminalType>;
   using Production = Table::Production;
   using Symbol = Table::Symbol;
-  
+
   explicit BNFParser(std::unique_ptr<Lexer> lexer) : lexer(std::move(lexer)){};
 
   static inline std::unique_ptr<BNFParser> create(

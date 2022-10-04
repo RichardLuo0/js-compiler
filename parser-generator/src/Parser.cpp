@@ -52,6 +52,10 @@ std::list<BNFParser::Symbol> BNFParser::parseRight() const noexcept(false) {
       case RegexTerminal:
         right.emplace_back<TerminalType>({TerminalType::Regex, token.value});
         break;
+      case RegexTerminalExclude:
+        right.emplace_back<TerminalType>(
+            {TerminalType::RegexExclude, token.value});
+        break;
       case Epsilon:
         right.push_back(Table::end);
         break;

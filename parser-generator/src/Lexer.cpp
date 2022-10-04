@@ -1,5 +1,7 @@
 #include "Lexer.hpp"
 
+#include <stdexcept>
+
 #include "Utility.hpp"
 
 using namespace ParserGenerator;
@@ -10,6 +12,31 @@ inline bool isInNonTerminal(unsigned char c) {
 
 inline void read(char& currentChar, std::istream& stream) {
   currentChar = static_cast<char>(stream.get());
+}
+
+[[nodiscard]] std::string matchRegex(char& currentChar, std::istream& stream) {
+  std::string value;
+  do {
+    value += currentChar;
+    read(currentChar, stream);
+  } while (currentChar != '/' || value.back() == '\\');
+  value += currentChar;
+  read(currentChar, stream);
+  if (currentChar == 'U') {
+    value += currentChar;
+    read(currentChar, stream);
+  }
+  return Utility::escape(value);
+}
+
+[[nodiscard]] std::string matchNonTerminal(char& currentChar,
+                                           std::istream& stream) {
+  std::string value;
+  do {
+    value += currentChar;
+    read(currentChar, stream);
+  } while (isInNonTerminal(currentChar));
+  return value;
 }
 
 void BNFLexer::readNextToken() noexcept(false) {
@@ -54,19 +81,33 @@ void BNFLexer::readNextToken() noexcept(false) {
         currentToken = {StringTerminal, value};
       return;
     }
-    case '/': {
+    case '/':
+      currentToken = {RegexTerminal, matchRegex(currentChar, stream)};
+      return;
+    case '[': {
       std::string value;
-      do {
-        value += currentChar;
-        read(currentChar, stream);
-      } while (currentChar != '/' || value.back() == '\\');
-      value += currentChar;
       read(currentChar, stream);
-      if (currentChar == 'U') {
-        value += currentChar;
-        read(currentChar, stream);
-      }
-      currentToken = {RegexTerminal, Utility::escape(value)};
+      if (currentChar == '/') {
+        value += matchRegex(currentChar, stream);
+        if (std::isspace(currentChar)) {
+          value += currentChar;
+          read(currentChar, stream);
+          if (isInNonTerminal(currentChar)) {
+            value += matchNonTerminal(currentChar, stream);
+            if (currentChar == ']')
+              read(currentChar, stream);
+            else
+              throw std::runtime_error("Expecting ]");
+          } else
+            throw std::runtime_error(
+                "Expecting non-terminal on the right of "
+                "RegexTerminalExclude");
+        } else
+          throw std::runtime_error("Expecting space");
+      } else
+        throw std::runtime_error(
+            "Expecting regex expression on the left of RegexTerminalExclude");
+      currentToken = {RegexTerminalExclude, value};
       return;
     }
     case '(': {
@@ -84,12 +125,7 @@ void BNFLexer::readNextToken() noexcept(false) {
     }
     default:
       if (isInNonTerminal(currentChar)) {
-        std::string value;
-        do {
-          value += currentChar;
-          read(currentChar, stream);
-        } while (isInNonTerminal(currentChar));
-        currentToken = {NonTerminal, value};
+        currentToken = {NonTerminal, matchNonTerminal(currentChar, stream)};
         return;
       }
       throw std::runtime_error(std::string("Unexpected token: ") + currentChar);

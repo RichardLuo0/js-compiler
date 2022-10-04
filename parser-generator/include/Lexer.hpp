@@ -10,9 +10,10 @@ enum TokenType {
   Definition,      // =
   Termination,     // ;
   Alternation,     // |
-  NonTerminal,     // Any char but token,
-  StringTerminal,  // ".*"
+  NonTerminal,     // NonTerminal
+  StringTerminal,  // "String"
   RegexTerminal,   // /Regex/
+  RegexTerminalExclude, // [/Regex/ NonTerminal]
   Epsilon,         // ""
   Comment          // (* *)
 };
