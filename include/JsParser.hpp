@@ -4,7 +4,7 @@
 #include <queue>
 
 #include "Expression.hpp"
-#include "GeneratedParser.parser.hpp"
+#include "Parser.parser.hpp"
 
 namespace JsCompiler {
 using namespace GeneratedParser;

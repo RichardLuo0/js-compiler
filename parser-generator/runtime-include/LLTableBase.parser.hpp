@@ -62,7 +62,7 @@ class LLTable {
   static inline const Symbol end{Symbol::End};
 
  protected:
-  Symbol start;
+  const Symbol start;
   std::unordered_map<
       NonTerminalType,
       std::unordered_map<Symbol, std::list<Symbol>, typename Symbol::Hash>>
