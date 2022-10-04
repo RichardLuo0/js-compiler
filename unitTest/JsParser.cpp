@@ -1,20 +1,36 @@
-#include <gtest/gtest.h>
-
-#include "GeneratedLexer.parser.hpp"
 #include "JsParser.hpp"
 
+#include <gtest/gtest.h>
+
+#include <memory>
+
+#include "Lexer.parser.hpp"
+
 namespace JsCompiler {
-TEST(Compile, MultiLineComment) {
-  std::stringstream s(R"(/* Hello world */)");
-  auto expression =
-      JsParser::create((GeneratedParser::Lexer::create(s)))->parseExpression();
-  EXPECT_EQ(dynamic_cast<CommentExpression*>(expression.get())->value, "Hello world ");
+class ParserTest : public ::testing::Test {
+ protected:
+  std::stringstream stream;
+  std::unique_ptr<JsParser> parser =
+      JsParser::create((GeneratedParser::Lexer::create(stream)));
+};
+
+TEST_F(ParserTest, MultiLineComment) {
+  stream.str(R"(/* Hello world */)");
+  auto expression = parser->parseExpression();
+  EXPECT_EQ(dynamic_cast<CommentExpression*>(expression.get())->value,
+            "Hello world ");
 }
 
-TEST(Compile, SingleLineComment) {
-  std::stringstream s(R"(// Hello world )");
-  auto expression =
-      JsParser::create((GeneratedParser::Lexer::create(s)))->parseExpression();
-  EXPECT_EQ(dynamic_cast<CommentExpression*>(expression.get())->value, "Hello world ");
+TEST_F(ParserTest, SingleLineComment) {
+  stream.str(R"(// Hello world )");
+  auto expression = parser->parseExpression();
+  EXPECT_EQ(dynamic_cast<CommentExpression*>(expression.get())->value,
+            "Hello world ");
+}
+
+TEST_F(ParserTest, VariableStatement) {
+  stream.str(R"(var a = null)");
+  auto expression = parser->parseExpression();
+  EXPECT_EQ(dynamic_cast<IdentifierExpression*>(expression.get())->name, "a");
 }
 }  // namespace JsCompiler

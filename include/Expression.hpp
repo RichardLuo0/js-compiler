@@ -14,8 +14,8 @@ class Expression {
 };
 
 class CommentExpression : public Expression {
-  FRIEND_TEST(Compile, MultiLineComment);
-  FRIEND_TEST(Compile, SingleLineComment);
+  FRIEND_TEST(ParserTest, MultiLineComment);
+  FRIEND_TEST(ParserTest, SingleLineComment);
 
  protected:
   const std::string value;
@@ -37,6 +37,8 @@ class NumberExpression : public Expression {
 };
 
 class IdentifierExpression : public Expression {
+  FRIEND_TEST(ParserTest, VariableStatement);
+
  protected:
   const std::string name;
 
