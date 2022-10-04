@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <ranges>
 #include <stack>
 #include <stdexcept>
 #include <unordered_map>
@@ -130,15 +131,15 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
           const Symbol& symbol = *traverseStack.top();
           graph[symbol].symbol = symbol;
           traverseStack.pop();
-          for (auto& matchP : grammar) {
-            if (matchP.left == symbol.getNonTerminal()) {
-              Symbol& rightFirst = matchP.right.front();
+          for (auto& p2 : grammar) {
+            if (p2.left == symbol.getNonTerminal()) {
+              Symbol& rightFirst = p2.right.front();
               if (rightFirst.type != Symbol::NonTerminal) {
                 graph[rightFirst].symbol = rightFirst;
                 terminalNodeSet.insert(&graph[rightFirst]);
               } else if (!graph.contains(rightFirst))
                 traverseStack.push(&rightFirst);
-              graph[rightFirst].edges.push_back({&matchP, &graph[symbol]});
+              graph[rightFirst].edges.push_back({&p2, &graph[symbol]});
             }
           }
         }
@@ -190,7 +191,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
                   firstP.right.pop_front();
                   // If no right left
                   if (firstP.right.size() <= 0)
-                    firstP.right.push_back(CommonLLTable::end);
+                    firstP.right.push_back(LLTableBase::end);
                   currentNode = path.at(currentNode)->to;
                   while (currentNode != edge.to) {
                     if (preCopiedNonTerminal != nullptr) {
@@ -234,7 +235,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
                   }
                 }
                 p.left = newLeft;
-                grammar.push_back({newLeft, {CommonLLTable::end}});
+                grammar.push_back({newLeft, {LLTableBase::end}});
                 // Remove from graph
                 it = node.edges.erase(it);
               }
@@ -319,7 +320,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
               newRight.pop_front();
               newRight.push_front(Symbol(*preNewNonTerminal));
             }
-            if (newRight.empty()) newRight.push_back(CommonLLTable::end);
+            if (newRight.empty()) newRight.push_back(LLTableBase::end);
             if (isLastEdge) {
               edge->production->left = lastNewNonTerminal;
               edge->production->right = newRight;
@@ -375,7 +376,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
     for (Node* terminalNode : terminalNodeSet) {
       // DFS
       const Symbol& terminalSymbol = terminalNode->symbol;
-      if (terminalSymbol == CommonLLTable::end) continue;
+      if (terminalSymbol == LLTableBase::end) continue;
       Edge dummyEdge{nullptr, terminalNode};
       std::stack<Edge*> traverseStack({&dummyEdge});
       while (!traverseStack.empty()) {
@@ -387,7 +388,6 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
           if (leftMap.contains(terminalSymbol))
             throw std::runtime_error("Not valid LL(1) grammar");
           leftMap.emplace(terminalSymbol, edge.production->right);
-          edge.production->firstSet.insert(terminalSymbol);
         }
         for (Edge& edge : node.edges) {
           traverseStack.push(&edge);
@@ -397,50 +397,53 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
   }
 
   void createFollowSet(std::list<Production>& grammar) {
-    // Construct follow set tree
-    std::list<Production*>&& workList = {};
-    std::list<Production*>&& nextWorkList = {};
-    std::unordered_map<NonTerminalType, std::unordered_set<const Production*>>
-        previousSetMap;
-    std::unordered_map<const Production*, SymbolSet> leafNodeMap;
+    // NonTerminal which can produce end
+    std::unordered_set<NonTerminalType> endNonTerminalList;
+    std::unordered_map<NonTerminalType, SymbolSet> followSetMap;
+    std::list<NonTerminalType> workList;
+    std::list<NonTerminalType> nextWorkList;
     for (Production& production : grammar) {
-      if (production.right.front() == CommonLLTable::end)
-        workList.push_back(&production);
+      if (production.right.front() == LLTableBase::end) {
+        workList.push_back(production.left);
+        endNonTerminalList.insert(production.left);
+      }
     }
     while (!workList.empty()) {
-      for (const Production* workPointer : workList) {
-        const Production& work = *workPointer;
-        if (work.left == this->start.getNonTerminal()) {
-          leafNodeMap[workPointer].insert(CommonLLTable::end);
+      for (const NonTerminalType& work : workList) {
+        SymbolSet& followSetOfWork = followSetMap[work];
+        if (work == this->start.getNonTerminal()) {
+          followSetOfWork.insert(LLTableBase::end);
           continue;
         }
         for (Production& production : grammar) {
-          if (production.left == work.left) continue;
+          if (production.left == work) continue;
           std::list<Symbol>& right = production.right;
           for (auto it = right.begin(); it != right.end(); it++) {
             const Symbol& symbol = *it;
             if (symbol.type == Symbol::NonTerminal &&
-                symbol.getNonTerminal() == work.left) {
-              if (it == --right.end()) {
-                auto& previousSet = previousSetMap[work.left];
-                if (previousSet.empty()) nextWorkList.push_back(&production);
-                previousSet.insert(&production);
+                symbol.getNonTerminal() == work) {
+              auto nextIt = std::next(it);
+              if (nextIt == right.end()) {
+                if (followSetOfWork.empty())
+                  nextWorkList.push_back(production.left);
+                followSetOfWork.insert(Symbol(production.left));
                 continue;
               }
-              const Symbol& nextSymbol = *std::next(it);
+              const auto& nextSymbol = *nextIt;
               switch (nextSymbol.type) {
                 case Symbol::NonTerminal: {
-                  for (const Production& production : grammar) {
-                    if (production.left == nextSymbol.getNonTerminal()) {
-                      const SymbolSet& firstSet = production.firstSet;
-                      leafNodeMap[workPointer].insert(firstSet.begin(),
-                                                      firstSet.end());
-                    }
+                  // Insert first set of next symbol
+                  const NonTerminalType& nonTerminal =
+                      nextSymbol.getNonTerminal();
+                  if (this->table.contains(nonTerminal)) {
+                    const auto& firstSet =
+                        std::views::keys(this->table.at(nonTerminal));
+                    followSetOfWork.insert(firstSet.begin(), firstSet.end());
                   }
                   break;
                 }
                 default:
-                  leafNodeMap[workPointer].insert(nextSymbol);
+                  followSetOfWork.insert(nextSymbol);
                   break;
               }
             }
@@ -448,25 +451,32 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
         }
       }
       workList = nextWorkList;
-      nextWorkList = {};
+      nextWorkList.clear();
     }
+
     // Create follow set
-    for (const auto& [production, symbolSet] : leafNodeMap) {
-      std::unordered_set<NonTerminalType> visited;
-      std::stack<const Production*> stack({production});
+    for (const auto& endNonTerminal : endNonTerminalList) {
+      auto& leftMap = this->table[endNonTerminal];
+      std::unordered_set<NonTerminalType> visited{endNonTerminal};
+      std::stack<NonTerminalType> stack({endNonTerminal});
       while (!stack.empty()) {
-        const Production* production = stack.top();
+        NonTerminalType topNonTerminal = stack.top();
         stack.pop();
-        visited.insert(production->left);
-        for (const Symbol& symbol : symbolSet) {
-          auto& leftMap = this->table[production->left];
-          if (!leftMap.contains(symbol))
-            leftMap.emplace(symbol, production->right);
-        }
-        auto previousSetIt = previousSetMap.find(production->left);
-        if (previousSetIt != previousSetMap.end()) {
-          for (const Production* parent : previousSetIt->second) {
-            if (!visited.contains(parent->left)) stack.push(parent);
+        for (const Symbol& symbol : followSetMap.at(topNonTerminal)) {
+          switch (symbol.type) {
+            case Symbol::NonTerminal: {
+              const NonTerminalType& symbolNonTerminal =
+                  symbol.getNonTerminal();
+              if (!visited.contains(symbolNonTerminal)) {
+                visited.insert(symbolNonTerminal);
+                stack.push(symbolNonTerminal);
+              }
+              break;
+            }
+            default:
+              if (!leftMap.contains(symbol))
+                leftMap.emplace(symbol, std::list{LLTableBase::end});
+              break;
           }
         }
       }
