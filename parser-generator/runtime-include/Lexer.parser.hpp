@@ -94,7 +94,7 @@ class Lexer {
 
   struct MatchState {
    protected:
-    std::unordered_map<size_t, bool> cache;
+    std::unordered_map<size_t, int> cache;
     const std::vector<std::unique_ptr<Matcher>>& matcherList;
 
    public:
@@ -103,9 +103,14 @@ class Lexer {
         : matcherList(matcherList) {}
 
     bool match(size_t index, Stream& stream) {
-      if (!cache.contains(index))
-        cache[index] = matcherList.at(index)->match(stream, *this);
-      return cache.at(index);
+      if (!cache.contains(index)) {
+        if (matcherList.at(index)->match(stream, *this))
+          cache.emplace(index, static_cast<int>(stream.tellg()));
+        else
+          cache.emplace(index, -1);
+      } else
+        stream.seekg(cache.at(index));
+      return cache.at(index) > -1;
     }
   };
 
