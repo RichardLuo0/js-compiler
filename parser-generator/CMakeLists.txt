@@ -9,7 +9,7 @@ set(${PROJECT_NAME}_ENTRY "src/Main.cpp")
 include(../cmake/IWYU.cmake OPTIONAL)
 
 include_directories(include)
-include_directories(runtime-include)
+include_directories(generated-parser)
 aux_source_directory(src SRC)
 remove(SRC ${${PROJECT_NAME}_ENTRY})
 add_library(${PROJECT_NAME}-lib ${SRC})

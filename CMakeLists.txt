@@ -18,9 +18,8 @@ add_custom_command(
   MAIN_DEPENDENCY parser-generator
   DEPENDS bnf/js.ebnf
 )
-aux_source_directory(parser-generator/runtime-include PASER_GENERATOR_HEADER)
-include_directories(parser-generator/runtime-include)
-file(GLOB PARSER_GENERATOR_RUNTIME parser-generator/runtime-include/*.hpp)
+include_directories(parser-generator/generated-parser)
+file(GLOB GENERATED_PARSER_HEADER parser-generator/runtime-include/*.hpp)
 
 # Link LLVM
 execute_process(COMMAND llvm-config --libs core OUTPUT_VARIABLE LLVM_LIBS)
