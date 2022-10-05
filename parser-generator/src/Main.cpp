@@ -37,7 +37,7 @@ struct TerminalListBuildInfo {
                                  const std::list<TerminalType>& terminalList)
       : terminalList(terminalList), productionList(std::move(productionList)){};
 
-  std::vector<size_t> getOnlyDirectTerminalListFromNonTerminal(
+  const std::vector<size_t>& getOnlyDirectTerminalListFromNonTerminal(
       const std::string& nonTerminal) {
     if (!nonTerminalToExcludeCache.contains(nonTerminal)) {
       auto& cache = nonTerminalToExcludeCache[nonTerminal];
@@ -82,22 +82,24 @@ std::string buildTableString(const Table& table) {
     result += "}},\n";
   }
   // Pop the last ,\n
-  result.erase(result.size() - 2, 2);
+  result.pop_back();
   result += "\n}";
   return result;
 }
 
 std::string buildTerminalString(TerminalListBuildInfo& buildInfo) {
   const auto& terminalList = buildInfo.terminalList;
-  std::string result;
+  std::string result =
+      "matcherList.resize(" + std::to_string(terminalList.size()) + ");\n";
+  int i = 0;
   for (const auto& terminal : terminalList) {
-    result += "matcherList.push_back(std::make_unique";
+    result += "matcherList[" + std::to_string(i++) + "] = std::make_unique";
     switch (terminal.type) {
       case TerminalType::String:
-        result += "<StringMatcher>(\"" + terminal.value + "\"";
+        result += "<StringMatcher>(\"" + terminal.value + "\")";
         break;
       case TerminalType::Regex:
-        result += "<RegexMatcher>(\"" + terminal.value + "\"";
+        result += "<RegexMatcher>(\"" + terminal.value + "\")";
         break;
       case TerminalType::RegexExclude: {
         auto terminalSplitIt =
@@ -115,13 +117,13 @@ std::string buildTerminalString(TerminalListBuildInfo& buildInfo) {
           result += std::to_string(terminal) + ",";
         }
         if (result.back() == ',') result.pop_back();
-        result += "}";
+        result += "})";
         break;
       }
       default:
         throw std::runtime_error("Unknown terminal");
     }
-    result += "));\n";
+    result += ";\n";
   }
   return result;
 }
