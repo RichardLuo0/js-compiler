@@ -62,7 +62,7 @@ class Regex {
     [[nodiscard]] Container* top() const { return stack.top().get(); }
   };
 
-  void parse(const std::string& regexStr) {
+  void parse(std::string_view regexStr) {
     ContainerStack stack;
     for (size_t pos = 0; pos < regexStr.size(); pos++) {
       char ch = regexStr.at(pos);
@@ -112,11 +112,11 @@ class Regex {
 
   struct StringController : Controller {
    protected:
-    std::string str;
+    std::string_view str;
     size_t index = 0;
 
    public:
-    explicit StringController(std::string str) : str(std::move(str)){};
+    explicit StringController(std::string_view str) : str(str){};
 
     char peek() override {
       if (index == str.size()) return EOF;
@@ -148,19 +148,16 @@ class Regex {
       transitionList.push_back(std::move(transition));
     };
 
-    [[nodiscard]] std::unordered_set<const State*> accept(
-        Controller& controller) const {
-      std::unordered_set<const State*> stateSet;
+    void accept(Controller& controller,
+                std::unordered_set<const State*>& stateSet) const {
       for (const auto& transition : transitionList) {
         if (transition.condition) {
           if (transition.condition->operator()(controller))
             stateSet.insert(transition.state);
         } else {
-          const auto& newStateSet = transition.state->accept(controller);
-          stateSet.insert(newStateSet.begin(), newStateSet.end());
+          transition.state->accept(controller, stateSet);
         }
       }
-      return stateSet;
     }
 
     [[nodiscard]] bool isMatched() const {
@@ -184,7 +181,7 @@ class Regex {
   }
 
  public:
-  explicit Regex(const std::string& regexStr) { parse(regexStr); };
+  explicit Regex(std::string_view regexStr) { parse(regexStr); };
 
   [[nodiscard]] const State& getStartState() const { return stateList.front(); }
 
@@ -198,8 +195,8 @@ class Regex {
                         }) != currentState.end();
   }
 
-  [[nodiscard]] bool match(std::string str) const {
-    StringController controller(std::move(str));
+  [[nodiscard]] bool match(std::string_view str) const {
+    StringController controller(str);
     return Regex::match(getStartState(), controller, _isGreedy);
   }
 
@@ -223,8 +220,7 @@ class Regex {
                                : -1;
     while (controller.peek() != EOF) {
       for (const auto& state : currentSet) {
-        const auto& singleNextSet = state->accept(controller);
-        nextSet.insert(singleNextSet.begin(), singleNextSet.end());
+        state->accept(controller, nextSet);
       }
       currentSet = nextSet;
       nextSet.clear();

@@ -71,7 +71,7 @@ class Lexer {
     const std::vector<size_t> excludeList;
 
    public:
-    RegexExcludeMatcher(const std::string& regexStr,
+    RegexExcludeMatcher(std::string_view regexStr,
                         std::vector<size_t>&& excludeList)
         : regex(Regex(regexStr)), excludeList(excludeList){};
 
@@ -164,6 +164,6 @@ class Lexer {
                              std::to_string(stream.peek()));
   }
 
-  [[nodiscard]] Token getCurrentToken() const { return currentToken; };
+  [[nodiscard]] const Token& getCurrentToken() const { return currentToken; };
 };
 }  // namespace GeneratedParser
