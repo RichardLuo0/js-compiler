@@ -32,12 +32,12 @@ class LLTable {
     explicit Symbol(TerminalType terminal) : type(Terminal), value(terminal) {}
     explicit Symbol(Type type) : type(type) {}
 
-    [[nodiscard]] NonTerminalType getNonTerminal() const {
+    [[nodiscard]] const NonTerminalType& getNonTerminal() const {
       assert(type == NonTerminal);
       return std::get<NonTerminalType>(value);
     }
 
-    [[nodiscard]] TerminalType getTerminal() const {
+    [[nodiscard]] const TerminalType& getTerminal() const {
       assert(type == Terminal);
       return std::get<TerminalType>(value);
     }

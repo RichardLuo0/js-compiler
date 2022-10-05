@@ -36,8 +36,11 @@ class ForwardBufferedInputStream {
   void seekg(size_t index) { this->index = index; }
 
   void shrinkBufferToIndex() {
-    buffer = {std::next(buffer.begin(), static_cast<int>(index)), buffer.end()};
-    index = 0;
+    if (index > 0) {
+      buffer = {std::next(buffer.begin(), static_cast<int>(index)),
+                buffer.end()};
+      index = 0;
+    }
   }
 
   std::string getBufferToIndexAsString() {

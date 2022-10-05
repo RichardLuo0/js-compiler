@@ -45,8 +45,6 @@ class IdentifierExpression : public Expression {
  public:
   explicit IdentifierExpression(std::string name) : name(std::move(name)) {}
 
-  [[nodiscard]] std::string getName() const { return name; }
-
   void codegen() const override { std::cout << name << std::endl; }
 };
 

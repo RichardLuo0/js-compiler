@@ -10,23 +10,24 @@ std::list<BNFParser::Production> BNFParser::parse() const noexcept(false) {
   std::list<Production> productionList;
 
   lexer->readNextToken();
-  Token currentToken = lexer->getCurrentToken();
-  while (currentToken.type != Eof) {
-    if (currentToken.type != Comment) {
-      productionList.push_back(parseExpression());
+  const Token& token = lexer->getCurrentToken();
+  while (token.type != Eof) {
+    if (token.type != Comment) {
+      parseExpression(productionList);
       while (lexer->getCurrentToken().type == Alternation) {
         lexer->readNextToken();
-        productionList.emplace_back(productionList.back().left, parseRight());
+        parseRight(
+            productionList.emplace_back(productionList.back().left).right);
       }
     }
     lexer->readNextToken();
-    currentToken = lexer->getCurrentToken();
   }
 
   return productionList;
 }
 
-BNFParser::Production BNFParser::parseExpression() const noexcept(false) {
+void BNFParser::parseExpression(std::list<Production>& productionList) const
+    noexcept(false) {
   Token left = lexer->getCurrentToken();
   lexer->readNextToken();
 
@@ -35,13 +36,12 @@ BNFParser::Production BNFParser::parseExpression() const noexcept(false) {
   }
   lexer->readNextToken();
 
-  return {left.value, parseRight()};
+  parseRight(productionList.emplace_back(left.value).right);
 }
 
-std::list<BNFParser::Symbol> BNFParser::parseRight() const noexcept(false) {
-  std::list<Symbol> right;
+void BNFParser::parseRight(std::list<Symbol>& right) const noexcept(false) {
+  const Token& token = lexer->getCurrentToken();
   do {
-    Token token = lexer->getCurrentToken();
     switch (token.type) {
       case NonTerminal:
         right.emplace_back(token.value);
@@ -63,7 +63,5 @@ std::list<BNFParser::Symbol> BNFParser::parseRight() const noexcept(false) {
         throw std::runtime_error("Expect symbol");
     }
     lexer->readNextToken();
-  } while (lexer->getCurrentToken().type != Termination &&
-           lexer->getCurrentToken().type != Alternation);
-  return right;
+  } while (token.type != Termination && token.type != Alternation);
 }

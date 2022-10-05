@@ -1,7 +1,7 @@
 #pragma once
 
+#include <list>
 #include <memory>
-#include <vector>
 
 #include "LLTable.hpp"
 #include "Lexer.hpp"
@@ -22,14 +22,20 @@ struct TerminalType {
 };
 
 class BNFParser {
- protected:
-  const std::unique_ptr<Lexer> lexer;
-
  public:
   using Table = LLTable<std::string, TerminalType>;
   using Production = Table::Production;
   using Symbol = Table::Symbol;
 
+ protected:
+  const std::unique_ptr<Lexer> lexer;
+
+  void parseExpression(std::list<Production>& productionList) const
+      noexcept(false);
+
+  void parseRight(std::list<Symbol>& right) const noexcept(false);
+
+ public:
   explicit BNFParser(std::unique_ptr<Lexer> lexer) : lexer(std::move(lexer)){};
 
   static inline std::unique_ptr<BNFParser> create(
@@ -38,10 +44,6 @@ class BNFParser {
   }
 
   [[nodiscard]] std::list<Production> parse() const noexcept(false);
-
-  [[nodiscard]] Production parseExpression() const noexcept(false);
-
-  [[nodiscard]] std::list<Symbol> parseRight() const noexcept(false);
 };
 }  // namespace ParserGenerator
 

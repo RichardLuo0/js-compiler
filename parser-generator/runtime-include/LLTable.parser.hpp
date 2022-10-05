@@ -26,7 +26,7 @@ class GeneratedLLTable : public LLTable<std::string, size_t> {
 
   void generateTable();
 
-  std::list<size_t> getCandidate(const std::string& nonTerminal) const {
+  const std::list<size_t>& getCandidate(const std::string& nonTerminal) const {
     return cache.at(nonTerminal);
   }
 

@@ -24,6 +24,6 @@ class IterableStack : public std::stack<ItemType> {
   explicit IterableStack(std::deque<ItemType>&& c)
       : std::stack<ItemType>(std::move(c)) {}
 
-  auto getContainer() { return this->c; }
+  const auto& getContainer() { return this->c; }
 };
 }  // namespace ParserGenerator::Utility

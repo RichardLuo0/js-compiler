@@ -48,11 +48,11 @@ class Parser {
     SymbolNode root{table.getStart()};
     SymbolNode end{GeneratedLLTable::end};
     std::stack<SymbolNode*> stack({&end, &root});
+    const Token& currentToken = lexer->getCurrentToken();
     lexer->readNextTokenExpect(
         table.getCandidate(root.symbol.getNonTerminal()));
     while (!stack.empty()) {
       SymbolNode& topSymbolNode = *stack.top();
-      const Token& currentToken = lexer->getCurrentToken();
       const Symbol& symbol = isEof(currentToken) ? GeneratedLLTable::end
                                                  : Symbol(currentToken.type);
 

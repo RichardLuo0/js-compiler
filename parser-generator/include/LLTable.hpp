@@ -41,6 +41,8 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
 
     Production(NonTerminalType left, std::list<Symbol> right)
         : left(left), right(right) {}
+    // Only used for in place construction
+    explicit Production(NonTerminalType left) : left(left) {}
   };
 
  protected:
@@ -74,7 +76,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
       const Symbol& symbol = *traverseStack.top();
       traverseStack.pop();
       for (auto& p : grammar) {
-        if (p.left == symbol.getNonTerminal()) {
+        if (p.left == symbol.getNonTerminal() && !p.right.empty()) {
           optimizedGrammar.push_back(p);
           for (auto& symbol : p.right) {
             if (symbol.type == Symbol::NonTerminal &&
