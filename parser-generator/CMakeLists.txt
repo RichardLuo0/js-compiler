@@ -3,7 +3,7 @@ project(parser-generator)
 
 enable_testing()
 set(CMAKE_CXX_STANDARD 20)
-add_compile_options(-Wall -Wfatal-errors)
+add_compile_options(-Wall -Wno-trigraphs -Wfatal-errors)
 add_link_options(-fuse-ld=lld)
 set(${PROJECT_NAME}_ENTRY "src/Main.cpp")
 include(../cmake/IWYU.cmake OPTIONAL)
