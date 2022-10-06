@@ -15,10 +15,10 @@ class ParserTest : public ::testing::Test {
 };
 
 TEST_F(ParserTest, MultiLineComment) {
-  stream.str(R"(/* Hello world */)");
+  stream.str("/* Hello\n world */");
   auto expression = parser->parseExpression();
   EXPECT_EQ(dynamic_cast<CommentExpression*>(expression.get())->value,
-            "Hello world ");
+            "Hello\n world ");
 }
 
 TEST_F(ParserTest, SingleLineComment) {
