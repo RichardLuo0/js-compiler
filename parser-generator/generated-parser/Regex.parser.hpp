@@ -119,7 +119,7 @@ class Regex {
     explicit StringController(std::string_view str) : str(str){};
 
     char peek() override {
-      if (index == str.size()) return EOF;
+      if (index >= str.size()) return EOF;
       return str.at(index);
     }
 
