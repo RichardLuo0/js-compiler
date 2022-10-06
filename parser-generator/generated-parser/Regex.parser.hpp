@@ -317,8 +317,9 @@ class Regex {
                          controller.restore(index);
                          return isMatched;
                        }) != conditionList.end();
-      controller.consume();
-      return isInverted ^ isWithinSet;
+      bool isMatched = isInverted ^ isWithinSet;
+      if (isMatched) controller.consume();
+      return isMatched;
     }
   };
 
