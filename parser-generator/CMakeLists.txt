@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.19)
 project(parser-generator)
 
 enable_testing()
@@ -8,19 +8,20 @@ add_link_options(-fuse-ld=lld)
 set(${PROJECT_NAME}_ENTRY "src/Main.cpp")
 include(../cmake/IWYU.cmake OPTIONAL)
 
-include_directories(include)
-include_directories(generated-parser)
-aux_source_directory(src SRC)
-remove(SRC ${${PROJECT_NAME}_ENTRY})
-add_library(${PROJECT_NAME}-lib ${SRC})
+aux_source_directory(src ${PROJECT_NAME}-SRC)
+remove(${PROJECT_NAME}-SRC ${${PROJECT_NAME}_ENTRY})
+add_library(${PROJECT_NAME}-lib ${${PROJECT_NAME}-SRC})
 target_precompile_headers(
   ${PROJECT_NAME}-lib
   PRIVATE
   include/LLTable.hpp
 )
+target_include_directories(${PROJECT_NAME}-lib PRIVATE include)
+target_include_directories(${PROJECT_NAME}-lib PUBLIC generated-parser)
 
 add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_ENTRY})
 target_link_libraries(${PROJECT_NAME} ${PROJECT_NAME}-lib)
+target_include_directories(${PROJECT_NAME} PRIVATE $<TARGET_PROPERTY:${PROJECT_NAME}-lib,INCLUDE_DIRECTORIES>)
 
 # GTest
 if (${${PROJECT_NAME}_DISABLE_TESTS})
