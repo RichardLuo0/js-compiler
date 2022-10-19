@@ -20,6 +20,7 @@ Checks: >
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -cppcoreguidelines-pro-type-const-cast,
   -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-slicing,
   -google-readability-namespace-comments,
   -google-runtime-int,
   -google-runtime-references,

@@ -296,20 +296,22 @@ class Regex {
     const State* state;
   };
 
-  struct AnyCondition : Condition {
+  struct AnyCondition : public Condition {
+   protected:
     bool operator()(char) const override { return true; }
   };
 
-  struct CharCondition : Condition {
+  struct CharCondition : public Condition {
    public:
     const char value;
 
     explicit CharCondition(char value) : value(value){};
 
+   protected:
     bool operator()(char ch) const override { return value == ch; }
   };
 
-  struct LookaheadCondition : Condition {
+  struct LookaheadCondition : public Condition {
    public:
     const State* startState;
     const bool isInverted;
@@ -322,7 +324,7 @@ class Regex {
     }
   };
 
-  struct CharRangeCondition : Condition {
+  struct CharRangeCondition : public Condition {
    public:
     const char start;
     char end{};
@@ -330,10 +332,11 @@ class Regex {
     explicit CharRangeCondition(char start) : start(start){};
     CharRangeCondition(char start, char end) : start(start), end(end){};
 
+   protected:
     bool operator()(char ch) const override { return ch >= start && ch <= end; }
   };
 
-  struct CharSetCondition : Condition {
+  struct CharSetCondition : public Condition {
    protected:
     std::list<std::shared_ptr<Condition>> conditionList;
     const bool isInverted;
@@ -362,12 +365,14 @@ class Regex {
     virtual State& generate(Regex& regex, State& preState) const = 0;
   };
 
+  struct ConditionAndToken : Token, Condition {};
+
   struct Container : Token {
    private:
     bool isEscaped = false;
 
    protected:
-    bool isEscape(char ch) {
+    bool isEscapeSymbol(char ch) {
       if (ch == '\\') {
         isEscaped = true;
         return true;
@@ -375,17 +380,67 @@ class Regex {
       return false;
     }
 
-    bool tryEscape(char& ch) {
-      bool oldIsEscaped = isEscaped;
+    enum EscapeType { NotEscape, EscapeChar, Newline, AnyDigit };
+
+    EscapeType tryEscape(char ch) {
+      EscapeType type = NotEscape;
       if (isEscaped) {
         isEscaped = false;
         switch (ch) {
           case 'n':
-            ch = '\n';
+            type = Newline;
+            break;
+          case 'd':
+            type = AnyDigit;
+            break;
+          default:
+            type = EscapeChar;
             break;
         }
       }
-      return oldIsEscaped;
+      return type;
+    }
+
+    template <class ConditionType>
+    requires std::is_base_of<Condition,
+                             ConditionType>::value struct CustomConditionToken
+        : ConditionAndToken {
+     public:
+      ConditionType condition;
+
+      template <class... Args>
+      explicit CustomConditionToken(Args... args)
+          : condition(std::forward<Args>(args)...){};
+
+      State& generate(Regex& regex, State& preState) const override {
+        State& endState = regex.createState();
+        preState.addTransition(
+            {std::make_unique<ConditionType>(condition), &endState});
+        return endState;
+      }
+
+      bool operator()(DerivedController controller) const override {
+        return static_cast<Condition>(condition)(controller);
+      }
+    };
+
+    static std::unique_ptr<ConditionAndToken> createConditionFromEscapeType(
+        size_t pos, EscapeType type, char ch) {
+      switch (type) {
+        case EscapeChar:
+          return std::make_unique<CustomConditionToken<CharCondition>>(ch);
+        case Newline:
+          return std::make_unique<CustomConditionToken<CharCondition>>('\n');
+        case AnyDigit:
+          return std::make_unique<CustomConditionToken<CharRangeCondition>>(
+              '0', '9');
+        case NotEscape:
+          throw std::runtime_error("The char is not escaped: " +
+                                   std::to_string(pos));
+        default:
+          throw std::runtime_error("Unknow escape type: " +
+                                   std::to_string(pos));
+      }
     }
 
    public:
@@ -452,51 +507,54 @@ class Regex {
     };
 
     bool push(ContainerStack& stack, size_t pos, char ch) override {
-      if (!tryEscape(ch)) {
-        if (isEscape(ch)) return false;
+      EscapeType type = tryEscape(ch);
+      if (type == NotEscape) {
+        if (isEscapeSymbol(ch)) return false;
         switch (ch) {
           case '(':
             stack.push(std::make_unique<Group>());
-            return false;
+            break;
           case ')':
             stack.finishTopContainer(pos);
-            return false;
+            break;
           case '[':
             stack.push(std::make_unique<CharSet>());
-            return false;
+            break;
           case '|':
             stack.push(std::make_unique<Alternation>(stack.popLastToken(pos)));
-            return false;
+            break;
           case '.':
             tokenList.push_back(std::make_unique<Any>());
-            return false;
+            break;
           case '*':
             tokenList.push_back(
                 std::make_unique<ZeroOrMore>(stack.popLastToken(pos)));
-            return false;
+            break;
           case '?':
             if (tokenList.empty()) {
               isLookahead = true;
             } else
               tokenList.push_back(
                   std::make_unique<ZeroOrOnce>(stack.popLastToken(pos)));
-            return false;
+            break;
           case '=':
             if (isLookahead && tokenList.empty()) break;
           case '!':
             if (isLookahead && tokenList.empty()) {
               isInverted = true;
-              return false;
+              break;
             }
           case '+':
             tokenList.push_back(
                 std::make_unique<OnceOrMore>(stack.popLastToken(pos)));
-            return false;
+            break;
           default:
+            tokenList.push_back(std::make_unique<Char>(ch));
             break;
         }
+      } else {
+        tokenList.push_back(createConditionFromEscapeType(pos, type, ch));
       }
-      tokenList.push_back(std::make_unique<Char>(ch));
       return false;
     };
 
@@ -532,44 +590,54 @@ class Regex {
       return endState;
     };
 
-    bool push(ContainerStack& stack, size_t pos, char ch) override {
-      if (!tryEscape(ch)) {
-        if (isEscape(ch)) return false;
-        switch (ch) {
-          case '-': {
-            if (charRangeToBeFulfilled)
-              throw std::runtime_error(
-                  "Previous char range is not fulfilled: " +
-                  std::to_string(pos));
-            auto lastCondition = conditionList.back();
-            conditionList.pop_back();
-            const auto* start =
-                dynamic_cast<const CharCondition*>(lastCondition.get());
-            if (start == nullptr)
-              throw std::runtime_error("Previous token must be a char: " +
-                                       std::to_string(pos));
-            auto charRangeCondition = std::make_unique<CharRangeCondition>(ch);
-            charRangeToBeFulfilled = charRangeCondition.get();
-            conditionList.push_back(std::move(charRangeCondition));
-            return false;
-          }
-          case ']':
-            stack.finishTopContainer(pos);
-            return false;
-          case '^':
-            if (conditionList.empty()) {
-              isInverted = true;
-              return false;
-            }
-          default:
-            break;
-        }
-      }
+    bool setCharRangeEnd(char ch) {
       if (charRangeToBeFulfilled) {
         charRangeToBeFulfilled->end = ch;
         charRangeToBeFulfilled = nullptr;
-      } else
-        conditionList.push_back(std::make_unique<CharCondition>(ch));
+        return true;
+      }
+      return false;
+    }
+
+    bool push(ContainerStack& stack, size_t pos, char ch) override {
+      EscapeType type = tryEscape(ch);
+      if (type == EscapeType::NotEscape) {
+        if (isEscapeSymbol(ch)) return false;
+        switch (ch) {
+          case '-': {
+            auto* lastCondition = conditionList.back().get();
+            const auto* start =
+                dynamic_cast<const CharCondition*>(lastCondition);
+            if (start == nullptr)
+              throw std::runtime_error("Previous token must be a char: " +
+                                       std::to_string(pos));
+            auto charRangeCondition =
+                std::make_unique<CharRangeCondition>(start->value);
+            charRangeToBeFulfilled = charRangeCondition.get();
+            conditionList.pop_back();
+            conditionList.push_back(std::move(charRangeCondition));
+            break;
+          }
+          case ']':
+            stack.finishTopContainer(pos);
+            break;
+          case '^':
+            if (conditionList.empty()) {
+              isInverted = true;
+              break;
+            }
+          default:
+            if (!setCharRangeEnd(ch))
+              conditionList.push_back(std::make_unique<CharCondition>(ch));
+            break;
+        }
+      } else {
+        if (type != EscapeType::EscapeChar && !setCharRangeEnd(ch))
+          conditionList.push_back(createConditionFromEscapeType(pos, type, ch));
+      }
+      if (charRangeToBeFulfilled && ch != '-')
+        throw std::runtime_error("Previous char range is not fulfilled: " +
+                                 std::to_string(pos));
       return false;
     };
 
@@ -604,8 +672,9 @@ class Regex {
     };
 
     bool push(ContainerStack& stack, size_t pos, char ch) override {
-      if (!tryEscape(ch)) {
-        if (isEscape(ch)) return false;
+      EscapeType type = tryEscape(ch);
+      if (type == EscapeType::NotEscape) {
+        if (isEscapeSymbol(ch)) return false;
         switch (ch) {
           case '(':
             stack.push(std::make_unique<Group>());
@@ -614,11 +683,13 @@ class Regex {
             stack.finishTopContainer(pos);
             return false;
           default:
-            break;
+            right = std::make_unique<Char>(ch);
+            return true;
         }
+      } else {
+        right = createConditionFromEscapeType(pos, type, ch);
+        return true;
       }
-      right = std::make_unique<Char>(ch);
-      return true;
     };
 
     bool push(ContainerStack&, size_t,
