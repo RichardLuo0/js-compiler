@@ -3,8 +3,7 @@
 !.clangd
 !.clang-format
 !.clang-tidy
+!.gitattributes
 *.backup
 build*
 backup
-
-src/Parser.cpp
