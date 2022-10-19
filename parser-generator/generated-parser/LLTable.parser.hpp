@@ -2,32 +2,32 @@
 
 #include <algorithm>
 #include <ranges>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "LLTableBase.parser.hpp"
 
 namespace GeneratedParser {
-class GeneratedLLTable : public LLTable<std::string, size_t> {
+class GeneratedLLTable : public LLTable<std::string_view, size_t> {
+  friend class Parser;
+
  protected:
-  std::unordered_map<std::string, std::list<size_t>> cache;
+  std::unordered_map<std::string_view, std::list<size_t>> candidateCache;
 
  public:
-  GeneratedLLTable() : LLTable("Start") {
-    generateTable();
-    for (const auto& [nonTerminal, map] : table) {
-      const auto& leftMap = table.at(nonTerminal);
-      auto& leftCache = cache[nonTerminal];
-      for (const auto& [symbol, _] : leftMap) {
+  GeneratedLLTable() : LLTable("Start"){};
+
+  const std::list<size_t>& getCandidate(const std::string_view& nonTerminal) {
+    if (!candidateCache.contains(nonTerminal)) {
+      auto& candidateCacheOfNonTerminal = candidateCache[nonTerminal];
+      for (const auto& [symbol, _] : table.at(nonTerminal)) {
         if (symbol.type == Symbol::Terminal)
-          leftCache.push_back(symbol.getTerminal());
+          candidateCacheOfNonTerminal.push_back(symbol.getTerminal());
       }
     }
-  };
-
-  void generateTable();
-
-  const std::list<size_t>& getCandidate(const std::string& nonTerminal) const {
-    return cache.at(nonTerminal);
+    return candidateCache.at(nonTerminal);
   }
 
   std::list<Symbol> predict(const Symbol& currentSymbol,

@@ -26,6 +26,7 @@ Checks: >
   -hicpp-braces-around-statements,
   -hicpp-named-parameter,
   -hicpp-special-member-functions,
+  -hicpp-no-array-decay,
   -misc-non-private-member-variables-in-classes,
   -modernize-use-trailing-return-type,
   -readability-named-parameter,
