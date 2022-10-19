@@ -122,6 +122,14 @@ class Lexer {
         stream.seekg(cache.at(index));
       return cache.at(index) > -1;
     }
+
+    int getMatchedPos() {
+      auto it = std::find_if(cache.begin(), cache.end(),
+                             [](std::pair<size_t, int> singleMatch) {
+                               return singleMatch.second > -1;
+                             });
+      return it != cache.end() ? it->second : -1;
+    }
   };
 
   std::vector<std::unique_ptr<Matcher>> matcherList;
@@ -139,12 +147,12 @@ class Lexer {
     return std::make_unique<Lexer>(stream);
   }
 
-  explicit Lexer(std::istream& stream);
+  explicit Lexer(std::istream& stream) : stream(stream) {}
 
   template <class Iterable>
   void readNextTokenExpect(const Iterable& matcherIndexIterable) {
     if (stream.peek() == EOF) {
-      currentToken = {eof, ""};
+      currentToken = {Eof, ""};
       return;
     }
 
@@ -155,24 +163,22 @@ class Lexer {
 
     MatchState state(matcherList);
     size_t startPos = stream.tellg();
-    bool isMatched = false;
     for (const size_t& index : matcherIndexIterable) {
-      if (state.match(index, stream)) {
-        isMatched = true;
+      if (state.match(index, stream))
         currentToken = {static_cast<TokenType>(index),
                         stream.getBufferToIndexAsString()};
-        break;
-      }
       stream.seekg(startPos);
     }
-    if (!isMatched) throw std::runtime_error("Incomplete token");
+    int matchedPos = state.getMatchedPos();
+    if (matchedPos == -1) throw std::runtime_error("Unexpected token");
+    stream.seekg(matchedPos);
 
     stream.shrinkBufferToIndex();
   }
 
   void readNextTokenExpectEof() {
     if (stream.peek() == EOF) {
-      currentToken = {eof, ""};
+      currentToken = {Eof, ""};
       return;
     }
     throw std::runtime_error("Expecting EOF but get " +
