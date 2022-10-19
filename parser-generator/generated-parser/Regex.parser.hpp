@@ -86,11 +86,38 @@ class Regex {
 
  public:
   struct Controller {
-    virtual char peek() = 0;
+    [[nodiscard]] virtual char peek() = 0;
     virtual char get() = 0;
     virtual void consume() = 0;
+
     [[nodiscard]] virtual size_t record() const = 0;
     virtual void restore(size_t index) = 0;
+
+    auto derive() { return DerivedController(*this); }
+  };
+
+  struct DerivedController : Controller {
+   protected:
+    Controller& controller;
+    const size_t startPos;
+
+   public:
+    explicit DerivedController(Controller& controller)
+        : controller(controller), startPos(controller.record()) {}
+
+    ~DerivedController() { controller.restore(startPos); }
+
+    [[nodiscard]] char peek() override { return controller.peek(); }
+
+    char get() override { return controller.get(); }
+
+    void consume() override { return controller.consume(); }
+
+    [[nodiscard]] size_t record() const override { return controller.record(); }
+
+    void restore(size_t index) override { return controller.restore(index); }
+
+    auto derive() { return DerivedController(controller); }
   };
 
   struct StreamController : Controller {
@@ -100,7 +127,9 @@ class Regex {
    public:
     explicit StreamController(Stream& stream) : stream(stream){};
 
-    char peek() override { return static_cast<char>(stream.peek()); }
+    [[nodiscard]] char peek() override {
+      return static_cast<char>(stream.peek());
+    }
 
     char get() override { return static_cast<char>(stream.get()); };
 
@@ -119,7 +148,7 @@ class Regex {
    public:
     explicit StringController(std::string_view str) : str(str){};
 
-    char peek() override {
+    [[nodiscard]] char peek() override {
       if (index >= str.size()) return EOF;
       return str.at(index);
     }
@@ -149,11 +178,11 @@ class Regex {
       transitionList.push_back(std::move(transition));
     };
 
-    void accept(Controller& controller,
+    void accept(DerivedController controller,
                 std::unordered_set<const State*>& stateSet) const {
       for (const auto& transition : transitionList) {
         if (transition.condition) {
-          if (transition.condition->operator()(controller))
+          if (transition.condition->operator()(controller.derive()))
             stateSet.insert(transition.state);
         } else {
           transition.state->accept(controller, stateSet);
@@ -221,8 +250,9 @@ class Regex {
                                : -1;
     while (controller.peek() != EOF) {
       for (const auto& state : currentSet) {
-        state->accept(controller, nextSet);
+        state->accept(controller.derive(), nextSet);
       }
+      controller.consume();
       currentSet = nextSet;
       nextSet.clear();
       if (isGreedy) {
@@ -246,7 +276,7 @@ class Regex {
 
   struct Condition {
    public:
-    virtual bool operator()(Controller& controller) const {
+    virtual bool operator()(DerivedController controller) const {
       return this->operator()(controller.get());
     };
 
@@ -275,16 +305,13 @@ class Regex {
   struct LookaheadCondition : Condition {
    public:
     const State* startState;
-    const bool isInverted = false;
+    const bool isInverted;
 
     LookaheadCondition(State* startState, bool isInverted)
         : startState(startState), isInverted(isInverted){};
 
-    bool operator()(Controller& controller) const override {
-      size_t index = controller.record();
-      bool isMatched = Regex::match(*startState, controller);
-      controller.restore(index);
-      return !isInverted & isMatched;
+    bool operator()(DerivedController controller) const override {
+      return !isInverted & Regex::match(*startState, controller);
     }
   };
 
@@ -294,6 +321,7 @@ class Regex {
     char end{};
 
     explicit CharRangeCondition(char start) : start(start){};
+    CharRangeCondition(char start, char end) : start(start), end(end){};
 
     bool operator()(char ch) const override { return ch >= start && ch <= end; }
   };
@@ -308,19 +336,17 @@ class Regex {
                      bool isInverted)
         : conditionList(std::move(conditionList)), isInverted(isInverted){};
 
-    bool operator()(Controller& controller) const override {
-      size_t index = controller.record();
-      bool isWithinSet =
-          std::find_if(conditionList.begin(), conditionList.end(),
-                       [&controller,
-                        &index](const std::shared_ptr<Condition>& condition) {
-                         bool isMatched = condition->operator()(controller);
-                         controller.restore(index);
-                         return isMatched;
-                       }) != conditionList.end();
-      bool isMatched = isInverted ^ isWithinSet;
-      if (isMatched) controller.consume();
-      return isMatched;
+    bool operator()(DerivedController controller) const override {
+      size_t pos = controller.record();
+      bool isInSet =
+          std::find_if(
+              conditionList.begin(), conditionList.end(),
+              [&controller, &pos](const std::shared_ptr<Condition>& condition) {
+                bool isMatched = condition->operator()(controller);
+                controller.restore(pos);
+                return isMatched;
+              }) != conditionList.end();
+      return isInverted ^ isInSet;
     }
   };
 
@@ -357,7 +383,7 @@ class Regex {
 
    public:
     /**
-     * @return {bool}  : Should be finished after push or not.
+     * @return {bool}  : Whether should be finished immediately
      */
     virtual bool push(ContainerStack&, size_t, char) = 0;
     virtual bool push(ContainerStack&, size_t, std::unique_ptr<Container>&) = 0;
