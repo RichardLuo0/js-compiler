@@ -17,6 +17,10 @@ class JsParser : protected Parser {
 
   explicit JsParser(std::unique_ptr<Lexer> lexer) : Parser(std::move(lexer)){};
 
+  /**
+   * @return {std::unique_ptr<Expression>}  : Parsed expression. Could be
+   * nullptr if input is empty.
+   */
   std::unique_ptr<Expression> parseExpression();
 };
 }  // namespace JsCompiler

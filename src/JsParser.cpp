@@ -67,5 +67,6 @@ std::unique_ptr<Expression> JsParser::parseExpression() {
         break;
     }
   }
-  return std::move(expressionQueue.front());
+  return !expressionQueue.empty() ? std::move(expressionQueue.front())
+                                  : nullptr;
 }

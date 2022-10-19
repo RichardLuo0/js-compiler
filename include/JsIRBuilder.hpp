@@ -22,6 +22,9 @@ class JsIRBuilder {
   explicit JsIRBuilder(std::unique_ptr<JsParser> parser)
       : parser(std::move(parser)), irBuilder(std::move(IRBuilder<>(context))){};
 
-  void build() { parser->parseExpression()->codegen(); }
+  void build() {
+    const auto& expression = parser->parseExpression();
+    if (expression != nullptr) expression->codegen();
+  }
 };
 }  // namespace JsCompiler
