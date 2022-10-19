@@ -52,3 +52,4 @@ include(CPack)
 
 # GTest
 include(cmake/GTest.cmake)
+create_gtest(unitTest ${PROJECT_NAME}-lib)
