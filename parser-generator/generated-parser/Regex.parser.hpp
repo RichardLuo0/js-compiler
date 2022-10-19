@@ -271,7 +271,14 @@ class Regex {
         if (isAnyStateMatch(currentSet)) return true;
       }
     }
-    return isGreedy ? isAnyStateMatch(currentSet) : false;
+    if (isGreedy) {
+      if (lastMatchedIndex >= 0) {
+        controller.restore(lastMatchedIndex);
+        return true;
+      }
+      return isAnyStateMatch(currentSet);
+    }
+    return false;
   }
 
   struct Condition {
