@@ -26,7 +26,7 @@ inline void read(char& currentChar, std::istream& stream) {
     value += currentChar;
     read(currentChar, stream);
   }
-  return Utility::escape(value);
+  return value;
 }
 
 [[nodiscard]] std::string matchNonTerminal(char& currentChar,
