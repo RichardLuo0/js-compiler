@@ -68,9 +68,10 @@ class Regex {
       char ch = regexStr.at(pos);
       switch (ch) {
         case '/':  // Delimiter
-          if (pos == 0 || pos == regexStr.size() - 1) break;
-          if (pos == regexStr.size() - 2) {
-            if (regexStr.at(++pos) == 'U') _isGreedy = false;
+          if (pos == 0 || pos == regexStr.size() - 1)
+            break;
+          else if (pos == regexStr.size() - 2 && regexStr.at(++pos) == 'U') {
+            _isGreedy = false;
             break;
           }
         default:
