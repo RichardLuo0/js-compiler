@@ -1,22 +1,10 @@
-Start = Statement | Comment;
+Start = Script | Module;
 
 (* Lexical *)
 NullLiteral = "null";
-
-(* UnicodeEscapeSequence = "u" Hex4Digits | "u{" CodePoint "}";
-Hex4Digits = HexDigit HexDigit HexDigit HexDigit;
-HexDigit = /[0-9a-fA-F]/;
-CodePoint = HexDigits; *)
-
-(* Expression *)
-PrimaryExpression = "this"
-                  | IdentifierReference
-                  | Literal;
-
-Literal = NullLiteral
-        | BooleanLiteral
-        | NumericLiteral
-        | StringLiteral;
+StringLiteral = /"([^\\]|(\\.))*"/;
+BooleanLiteral = "true" | "false";
+NumericLiteral = /\d+/;
 
 ReservedWord = "await" | "break" | "case" | "catch" | "class"
              | "const" | "continue" | "debugger" |"default" | "delete"
@@ -27,48 +15,347 @@ ReservedWord = "await" | "break" | "case" | "catch" | "class"
              | "true" | "try" | "typeof" | "var" | "void"
              | "while" | "with" | "yield";
 
-(* Comment *)
 Comment = SingleLineComment | MultiLineComment;
-
 MultiLineComment = "/*" MultiLineCommentChars "*/";
 MultiLineCommentChars = /([^*]|(\*(?!\/)))*/;
-
 SingleLineComment = "//" SingleLineCommentChars;
 SingleLineCommentChars = /[^\n]*/;
 
-(* Identifier *)
-IdentifierReference = Identifier | "yield" | "await";
-BindingIdentifier = Identifier | "yield" | "await";
-Identifier = [/[$_A-z]+/ ReservedWord];
-(* IdentifierName = IdentifierStart | IdentifierName | IdentifierPart;
-IdentifierStart = IdentifierStartChar | "\\" UnicodeEscapeSequence;
-IdentifierStartChar = UnicodeIDStart | "$" | "_"; *)
+(* Expression *)
+ExpressionOpt = Expression | "";
+Expression = AssignmentExpression | Expression "," AssignmentExpression;
 
-(* Assignment *)
+Elision = "," | Elision "," | "";
+SpreadElement = "..." AssignmentExpression;
+Initializer = "=" AssignmentExpression;
+
 AssignmentExpression = ConditionalExpression
                      | YieldExpression
                      | ArrowFunction
                      | AsyncArrowFunction
-                     | LeftHandSideExpression; (* TODO *)
+                     | LeftHandSideExpression
+                     | LeftHandSideExpression "=" AssignmentExpression
+                     | LeftHandSideExpression AssignmentOperator AssignmentExpression
+                     | LeftHandSideExpression "&&=" AssignmentExpression
+                     | LeftHandSideExpression "||=" AssignmentExpression
+                     | LeftHandSideExpression "??=" AssignmentExpression;
+AssignmentOperator = "*=" | "/=" | "%=" | "+=" | "-=" | "<<=" | ">>=" | ">>>=" | "&=" | "^=" | "|=" | "**=";
+AssignmentPattern = ObjectAssignmentPattern | ArrayAssignmentPattern;
 LeftHandSideExpression = NewExpression
                        | CallExpression
                        | OptionalExpression;
 NewExpression = MemberExpression | "new" NewExpression;
-MemberExpression = PrimaryExpression; (* TODO *)
+MemberExpression = PrimaryExpression 
+                 | MemberExpression "[" Expression "]"
+                 | MemberExpression "." IdentifierName
+                 | MemberExpression TemplateLiteral
+                 | SuperProperty
+                 | MetaProperty
+                 | "new" MemberExpression Arguments
+                 | MemberExpression "." PrivateIdentifier;
+SuperProperty = "super" "[" Expression "]" | "super" "." IdentifierName;
+MetaProperty = NewTarget | ImportMeta;
+NewTarget = "new" "." "target";
+ImportMeta = "import" "." "meta";
+CallExpression = CoverCallExpressionAndAsyncArrowHead
+               | SuperCall
+               | ImportCall
+               | CallExpression Arguments
+               | CallExpression "[" Expression "]"
+               | CallExpression "." IdentifierName
+               | CallExpression TemplateLiteral
+               | CallExpression "." PrivateIdentifier;
+SuperCall = "super" Arguments;
+ImportCall = "import" "(" AssignmentExpression ")";
+Arguments = "(" ")" | "(" ArgumentList ")" | "(" ArgumentList "," ")";
+ArgumentList = AssignmentExpression
+             | "..." AssignmentExpression
+             | ArgumentList "," AssignmentExpression
+             | ArgumentList "," "..." AssignmentExpression;
+OptionalExpression = MemberExpression OptionalChain
+                   | CallExpression  OptionalChain
+                   | OptionalExpression OptionalChain;
+OptionalChain = "?." Arguments
+              | "?."
+              | "?." IdentifierName
+              | "?." TemplateLiteral
+              | "?." PrivateIdentifier
+              | OptionalChain  Arguments 
+              | OptionalChain "[" Expression "]"
+              | OptionalChain "." IdentifierName
+              | OptionalChain TemplateLiteral
+              | OptionalChain "." PrivateIdentifier;
+UpdateExpression = LeftHandSideExpression
+                 | LeftHandSideExpression "++"
+                 | LeftHandSideExpression "--"
+                 | "++" UnaryExpression
+                 | "--" UnaryExpression;
+UnaryExpression = UpdateExpression
+                | "delete" UnaryExpression
+                | "void" UnaryExpression
+                | "typeof" UnaryExpression
+                | "+" UnaryExpression
+                | "-" UnaryExpression
+                | "~" UnaryExpression
+                | "!" UnaryExpression
+                | AwaitExpression;
+ExponentiationExpression = UnaryExpression | UpdateExpression "**" ExponentiationExpression;
+MultiplicativeExpression = ExponentiationExpression | MultiplicativeExpression MultiplicativeOperator ExponentiationExpression;
+MultiplicativeOperator = "*" | "/" | "%";
+AdditiveExpression = MultiplicativeExpression
+                   | AdditiveExpression "+" MultiplicativeExpression
+                   | AdditiveExpression "-" MultiplicativeExpression;
+ShiftExpression = AdditiveExpression
+                | ShiftExpression "<<" AdditiveExpression 
+                | ShiftExpression ">>" AdditiveExpression 
+                | ShiftExpression ">>>" AdditiveExpression;
+RelationalExpression = ShiftExpression
+                     | RelationalExpression "<" ShiftExpression
+                     | RelationalExpression ">" ShiftExpression 
+                     | RelationalExpression "<=" ShiftExpression
+                     | RelationalExpression ">=" ShiftExpression 
+                     | RelationalExpression "instanceof" ShiftExpression
+                     | RelationalExpression "in" ShiftExpression 
+                     | PrivateIdentifier "in" ShiftExpression;
+EqualityExpression = RelationalExpression
+                   | EqualityExpression  "==" RelationalExpression
+                   | EqualityExpression  "!=" RelationalExpression
+                   | EqualityExpression  "===" RelationalExpression 
+                   | EqualityExpression  "!==" RelationalExpression;
+BitwiseANDExpression = EqualityExpression | BitwiseANDExpression "&" EqualityExpression;
+BitwiseXORExpression = BitwiseANDExpression | BitwiseXORExpression "^" BitwiseANDExpression;
+BitwiseORExpression = BitwiseXORExpression | BitwiseORExpression "|" BitwiseXORExpression;
+LogicalANDExpression = BitwiseORExpression | LogicalANDExpression "&&" BitwiseORExpression;
+LogicalORExpression = LogicalANDExpression | LogicalORExpression "||" LogicalANDExpression;
+CoalesceExpression = CoalesceExpressionHead "??" BitwiseORExpression;
+CoalesceExpressionHead = CoalesceExpression | BitwiseORExpression;
+ShortCircuitExpression = LogicalORExpression | CoalesceExpression;
+ConditionalExpression = ShortCircuitExpression | ShortCircuitExpression "?" AssignmentExpression ":" AssignmentExpression;
+
+PrimaryExpression = "this"
+                  | IdentifierReference
+                  | Literal
+                  | ArrayLiteral
+                  | ObjectLiteral
+                  | FunctionExpression
+                  | ClassExpression
+                  | GeneratorExpression
+                  | AsyncFunctionExpression
+                  | AsyncGeneratorExpression
+                  | RegularExpressionLiteral
+                  | TemplateLiteral
+                  | CoverParenthesizedExpressionAndArrowParameterList;
+
+IdentifierReference = Identifier | "yield" | "await";
+BindingIdentifier = Identifier | "yield" | "await";
+LabelIdentifier = Identifier | "yield" | "await";
+Identifier = [/[$_A-z]+/ ReservedWord]; (* TODO Unicode identifier start *)
+
+Literal = NullLiteral
+        | BooleanLiteral
+        | NumericLiteral
+        | StringLiteral;
+
+ArrayLiteral = "[" Elision "]"
+             | "[" ElementList "]"
+             | "[" ElementList "," Elision "]";
+ElementList = Elision AssignmentExpression
+            | Elision SpreadElement
+            | ElementList "," Elision AssignmentExpression
+            | ElementList "," Elision SpreadElement;
+
+ObjectLiteral = "{" "}"
+              | "{" PropertyDefinitionList "}"
+              | "{" PropertyDefinitionList "," "}";
+PropertyDefinitionList = PropertyDefinition | PropertyDefinitionList "," PropertyDefinition;
+PropertyDefinition = IdentifierReference
+                   | CoverInitializedName
+                   | PropertyName ":" AssignmentExpression
+                   | MethodDefinition
+                   | "..." AssignmentExpression;
+PropertyName = LiteralPropertyName | ComputedPropertyName;
+LiteralPropertyName = IdentifierName | StringLiteral | NumericLiteral;
+ComputedPropertyName = "[" AssignmentExpression "]";
+CoverInitializedName = IdentifierReference Initializer;
+
+TemplateLiteral = NoSubstitutionTemplate | SubstitutionTemplate;
+SubstitutionTemplate = TemplateHead Expression TemplateSpans;
+TemplateSpans = TemplateTail | TemplateMiddleList TemplateTail;
+TemplateMiddleList = TemplateMiddle Expression | TemplateMiddleList TemplateMiddle Expression;
+
+CoverParenthesizedExpressionAndArrowParameterList = "(" Expression ")"
+                                                  | "(" Expression "," ")"
+                                                  | "(" ")"
+                                                  | "(" "..." BindingIdentifier ")"
+                                                  | "(" "..." BindingPattern ")"
+                                                  | "(" Expression "," "..." BindingIdentifier ")"
+                                                  | "(" Expression "," "..." BindingPattern ")";
 
 (* Statement *)
-Statement = VariableStatement;
+Statement = BlockStatement
+          | VariableStatement
+          | EmptyStatement
+          | ExpressionStatement
+          | IfStatement
+          | BreakableStatement
+          | ContinueStatement
+          | BreakStatement
+          | ReturnStatement
+          | WithStatement
+          | LabelledStatement
+          | ThrowStatement
+          | TryStatement
+          | DebuggerStatement;
 
-(* Variable Statement *)
+StatementListOpt = StatementList | "";
+StatementList = StatementListItem
+              | StatementList StatementListItem;
+StatementListItem = Statement | Declaration;
+
+Declaration = HoistableDeclaration
+            | ClassDeclaration
+            | LexicalDeclaration;
+HoistableDeclaration = FunctionDeclaration
+                     | GeneratorDeclaration
+                     | AsyncFunctionDeclaration
+                     | AsyncGeneratorDeclaration;
+LexicalDeclaration = LetOrConst BindingList ";";
+LetOrConst = "let" | "const";
+BindingList = LexicalBinding | BindingList "," LexicalBinding;
+LexicalBinding =  BindingIdentifier Initializer | BindingPattern Initializer | BindingIdentifier;
+BindingPattern = ObjectBindingPattern | ArrayBindingPattern;
+ObjectBindingPattern = "{" "}"
+                     | "{" BindingRestProperty "}"
+                     | "{" BindingPropertyList "}"
+                     | "{" BindingPropertyList "," BindingRestProperty "}"
+                     | "{" BindingPropertyList "," "}";
+ArrayBindingPattern = "[" Elision BindingRestElement "]"
+                    | "[" Elision "]"
+                    | "[" BindingElementList "]"
+                    | "[" BindingElementList "," Elision BindingRestElement "]"
+                    | "[" BindingElementList "," Elision "]";
+BindingRestProperty = "..." BindingIdentifier;
+BindingPropertyList = BindingProperty | BindingPropertyList "," BindingProperty;
+BindingElementList = BindingElisionElement | BindingElementList "," BindingElisionElement;
+BindingElisionElement = Elision BindingElement;
+BindingProperty = SingleNameBinding | PropertyName ":" BindingElement;
+BindingElement = SingleNameBinding | BindingPattern Initializer;
+SingleNameBinding = BindingIdentifier Initializer | BindingIdentifier;
+BindingRestElement = "..." BindingIdentifier | "..." BindingPattern;
+
+BlockStatement = Block;
+Block = "{" StatementListOpt "}";
+
 VariableStatement = "var" VariableDeclarationList;
 VariableDeclarationList = VariableDeclaration | VariableDeclarationList "," VariableDeclaration;
 VariableDeclaration = BindingIdentifier | BindingIdentifier Initializer | BindingPattern Initializer;
-BindingPattern = ObjectBindingPattern | ArrayBindingPattern;
-ObjectBindingPattern = "{" "}";
-                     (* | "{" BindingRestProperty "}"
-                     | "{" BindingPropertyList "}"
-                     | "{" BindingPropertyList "," BindingRestProperty "}"; *)
-ArrayBindingPattern = "[" Elision BindingRestElement "]";
-                    (* | "[" BindingElementList "]"
-                    | "[" BindingElementList "," Elisionopt BindingRestElement "]"; *)
-Initializer = "=" AssignmentExpression;
+
+EmptyStatement = ";";
+
+ExpressionStatement = Expression ";";
+
+IfStatement = "if" "(" Expression ")" Statement "else" Statement
+            | "if" "(" Expression ")" Statement;
+
+BreakableStatement = IterationStatement | SwitchStatement;
+IterationStatement = DoWhileStatement 
+                   | WhileStatement
+                   | ForStatement
+                   | ForInOfStatement;
+DoWhileStatement = "do" Statement "while" "(" Expression ")" ";";
+WhileStatement = "while" "(" Expression ")" Statement;
+ForStatement = "for" "(" ExpressionOpt ";" ExpressionOpt ";" ExpressionOpt ")" Statement
+             | "for" "(" "var" VariableDeclarationList ";" ExpressionOpt ";" ExpressionOpt ")" Statement
+             | "for" "(" LexicalDeclaration ExpressionOpt ";" ExpressionOpt ")" Statement;
+ForInOfStatement = "for" "(" LeftHandSideExpression "in" Expression ")" Statement
+                 | "for" "(" "var" ForBinding "in" Expression ")" Statement
+                 | "for" "(" ForDeclaration "in" Expression ")" Statement
+                 | "for" "(" LeftHandSideExpression "of" AssignmentExpression ")" Statement
+                 | "for" "(" "var" ForBinding "of" AssignmentExpression ")" Statement
+                 | "for" "(" ForDeclaration "of" AssignmentExpression ")" Statement
+                 | "for" "await" "(" LeftHandSideExpression "of" AssignmentExpression ")" Statement
+                 | "for" "await" "(" "var" ForBinding "of" AssignmentExpression ")" Statement
+                 | "for" "await" "(" ForDeclaration "of" AssignmentExpression ")" Statement;
+ForDeclaration = LetOrConst ForBinding;
+ForBinding = BindingIdentifier | BindingPattern;
+SwitchStatement = "switch" "(" Expression ")" CaseBlock;
+CaseBlock = "{" CaseClausesOpt "}" | "{" CaseClausesOpt DefaultClause CaseClausesOpt "}";
+CaseClausesOpt = CaseClauses | "";
+CaseClauses = CaseClause | CaseClauses CaseClause;
+CaseClause = "case" Expression ":" StatementListOpt | "case" Expression ":";
+DefaultClause = "default" ":" StatementListOpt;
+
+ContinueStatement = "continue" ";" | "continue" LabelIdentifier ";";
+
+BreakStatement = "break" ";" | "break" LabelIdentifier ";";
+
+ReturnStatement = "return" ";" | "return" Expression ";";
+
+WithStatement = "with" "(" Expression ")" Statement;
+
+LabelledStatement = LabelIdentifier ":" LabelledItem;
+LabelledItem = Statement | FunctionDeclaration;
+
+ThrowStatement = "throw" Expression ";";
+
+TryStatement = "try" Block Catch
+             | "try" Block Finally
+             | "try" Block Catch Finally;
+Catch = "catch" "(" CatchParameter ")" Block | "catch" Block;
+Finally = "finally" Block;
+CatchParameter = BindingIdentifier | BindingPattern;
+
+DebuggerStatement = "debugger" ";";
+
+(* Scripts and Modules *)
+Script = ScriptBody;
+ScriptBody = StatementList;
+
+Module = ModuleBody;
+ModuleBody = ModuleItemList;
+ModuleItemList = ModuleItem
+               | ModuleItemList ModuleItem;
+ModuleItem = ImportDeclaration
+           | ExportDeclaration
+           | StatementListItem;
+
+ModuleExportName = Identifier
+                 | StringLiteral;
+
+ImportDeclaration = "import" ImportClause FromClause ";"
+                  | "import" ModuleSpecifier ";";
+ImportClause = ImportedDefaultBinding
+             | NameSpaceImport
+             | NamedImports
+             | ImportedDefaultBinding "," NameSpaceImport
+             | ImportedDefaultBinding "," NamedImports;
+ImportedDefaultBinding = ImportedBinding;
+NameSpaceImport = "*" "as" ImportedBinding;
+NamedImports = "{" "}"
+             | "{" ImportsList "}"
+             | "{" ImportsList "," "}";
+FromClause = "from" ModuleSpecifier;
+ImportsList = ImportSpecifier
+            | ImportsList "," ImportSpecifier;
+ImportSpecifier = ImportedBinding
+                | ModuleExportName "as" ImportedBinding;
+ModuleSpecifier = StringLiteral;
+ImportedBinding = BindingIdentifier;
+
+ExportDeclaration = "export" ExportFromClause FromClause 
+                  | "export" NamedExports 
+                  | "export" VariableStatement
+                  | "export" Declaration
+                  | "export" "default" HoistableDeclaration
+                  | "export" "default" ClassDeclaration
+                  | "export" "default" AssignmentExpression ";";
+ExportFromClause = "*"
+                 | "*" "as" ModuleExportName
+                 | NamedExports;
+NamedExports = "{" "}"
+             | "{" ExportsList "}"
+             | "{" ExportsList "," "}";
+ExportsList = ExportSpecifier
+            | ExportsList "," ExportSpecifier;
+ExportSpecifier = ModuleExportName
+                | ModuleExportName "as" ModuleExportName;
