@@ -31,6 +31,8 @@ class LLTable {
         : type(NonTerminal), value(nonTerminal) {}
     explicit Symbol(TerminalType terminal) : type(Terminal), value(terminal) {}
     explicit Symbol(Type type) : type(type) {}
+    // Only used for serialization
+    Symbol() = default;
 
     [[nodiscard]] const NonTerminalType& getNonTerminal() const {
       assert(type == NonTerminal);
@@ -59,7 +61,7 @@ class LLTable {
     };
   };
 
-  static inline const Symbol end{Symbol::End};
+  static inline const Symbol END{Symbol::End};
 
  protected:
   const Symbol start;

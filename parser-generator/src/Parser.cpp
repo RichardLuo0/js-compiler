@@ -57,7 +57,7 @@ void BNFParser::parseRight(std::list<Symbol>& right) const noexcept(false) {
             {TerminalType::RegexExclude, token.value});
         break;
       case Epsilon:
-        right.push_back(Table::end);
+        right.push_back(Table::END);
         break;
       default:
         throw std::runtime_error("Expect symbol");

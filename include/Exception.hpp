@@ -31,6 +31,8 @@ struct UnexpectedTokenException : public SyntaxException {
  public:
   explicit UnexpectedTokenException(const std::string& token)
       : SyntaxException("Unexpected token: " + token) {}
+  explicit UnexpectedTokenException(const std::string_view& token)
+      : SyntaxException(std::string("Unexpected token: ").append(token)) {}
   explicit UnexpectedTokenException(char ch)
       : UnexpectedTokenException(std::string(1, ch)) {}
 };

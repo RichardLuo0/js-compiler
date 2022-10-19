@@ -15,7 +15,7 @@ class JsParser : protected Parser {
     return std::make_unique<JsParser>(std::move(lexer));
   }
 
-  explicit JsParser(std::unique_ptr<Lexer> lexer) : Parser(std::move(lexer)){};
+  explicit JsParser(std::unique_ptr<Lexer> lexer);
 
   /**
    * @return {std::unique_ptr<Expression>}  : Parsed expression. Could be

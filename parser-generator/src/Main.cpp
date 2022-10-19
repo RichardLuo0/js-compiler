@@ -11,13 +11,13 @@
 #include <unordered_set>
 #include <utility>
 
-#include "CppGenerator.hpp"
 #include "LLTable.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
-#include "Utility.hpp"
+#include "Serializer.parser.hpp"
 
 using namespace ParserGenerator;
+using namespace GeneratedParser::Serializer;
 
 using Table = LLTable<std::string, size_t>;
 using Production = Table::Production;
@@ -52,96 +52,79 @@ struct TerminalListBuildInfo {
   }
 };
 
-std::string buildTableString(const Table& table) {
-  std::string result = "{\n";
-  for (const auto& [nonTerminal, map] : table.getTable()) {
-    result += "{\"" + Utility::escape(nonTerminal) + "\",\n{";
-    for (const auto& [symbol, right] : map) {
-      result +=
-          "{" + (symbol.type == Symbol::Terminal
-                     ? "Symbol(" + std::to_string(symbol.getTerminal()) + "),{"
-                     : "end,{");
-      for (const Symbol& symbol : right) {
-        if (&symbol != &right.front()) result += ',';
-        switch (symbol.type) {
-          case Symbol::Terminal:
-            result += "Symbol(" + std::to_string(symbol.getTerminal()) + ")";
-            break;
-          case Symbol::NonTerminal:
-            result +=
-                "Symbol(\"" + Utility::escape(symbol.getNonTerminal()) + "\")";
-            break;
-          case Symbol::End:
-            result += "end";
-          default:
-            break;
-        }
-      }
-      result += "}},\n";
-    }
-    result += "}},\n";
-  }
-  // Pop the last ,\n
-  result.pop_back();
-  result += "\n}";
-  return result;
-}
+template <>
+class GeneratedParser::Serializer::Serializer<TerminalListBuildInfo>
+    : public ISerializer {
+ protected:
+  TerminalListBuildInfo& buildInfo;
 
-std::string buildTerminalString(TerminalListBuildInfo& buildInfo) {
-  const auto& terminalList = buildInfo.terminalList;
-  std::string result =
-      "matcherList.resize(" + std::to_string(terminalList.size()) + ");\n";
-  int i = 0;
-  for (const auto& terminal : terminalList) {
-    result += "matcherList[" + std::to_string(i++) + "] = std::make_unique";
-    switch (terminal.type) {
-      case TerminalType::String:
-        result += "<StringMatcher>(\"" + terminal.value + "\")";
-        break;
-      case TerminalType::Regex:
-        result += "<RegexMatcher>(\"" + terminal.value + "\")";
-        break;
-      case TerminalType::RegexExclude: {
-        auto terminalSplitIt =
-            std::ranges::split_view(terminal.value, ' ').begin();
-        auto regex =
-            std::string((*terminalSplitIt).begin(), (*terminalSplitIt).end());
-        terminalSplitIt++;
-        auto excludeNonTerminal =
-            std::string((*terminalSplitIt).begin(), (*terminalSplitIt).end());
-        result +=
-            "<RegexExcludeMatcher>(\"" + regex + "\",std::vector<size_t>{";
-        for (size_t terminal :
-             buildInfo.getOnlyDirectTerminalListFromNonTerminal(
-                 excludeNonTerminal)) {
-          result += std::to_string(terminal) + ",";
+ public:
+  explicit Serializer(TerminalListBuildInfo& buildInfo)
+      : buildInfo(buildInfo) {}
+
+  void serialize(BinaryOfstream& os) const override {
+    os.put(buildInfo.terminalList.size());
+    for (auto& item : buildInfo.terminalList) {
+      os.put(item.type);
+      switch (item.type) {
+        case TerminalType::String:
+        case TerminalType::Regex:
+          Serializer<std::string>(item.value).serialize(os);
+          break;
+        case TerminalType::RegexExclude: {
+          auto terminalSplitIt =
+              std::ranges::split_view(item.value, ' ').begin();
+          auto regex = std::string_view{(*terminalSplitIt).begin(),
+                                        (*terminalSplitIt).end()};
+          Serializer<std::string_view>(regex).serialize(os);
+          terminalSplitIt++;
+          auto excludeNonTerminal =
+              std::string{(*terminalSplitIt).begin(), (*terminalSplitIt).end()};
+          Serializer<std::vector<size_t>>(
+              buildInfo.getOnlyDirectTerminalListFromNonTerminal(
+                  excludeNonTerminal))
+              .serialize(os);
+          break;
         }
-        if (result.back() == ',') result.pop_back();
-        result += "})";
-        break;
+        default:
+          throw std::runtime_error("Unknown terminal");
       }
-      default:
-        throw std::runtime_error("Unknown terminal");
+      os.put(EOS);
     }
-    result += ";\n";
+    os.put(EOS);
   }
-  return result;
-}
+};
+
+template <>
+class GeneratedParser::Serializer::Serializer<Symbol> : public ISerializer {
+ protected:
+  const Symbol& symbol;
+
+ public:
+  explicit Serializer(const Symbol& symbol) : symbol(symbol) {}
+
+  void serialize(BinaryOfstream& os) const override {
+    os.put(symbol.type);
+    switch (symbol.type) {
+      case Symbol::Terminal:
+        Serializer<size_t>(symbol.getTerminal()).serialize(os);
+        break;
+      case Symbol::NonTerminal:
+        Serializer<std::string>(symbol.getNonTerminal()).serialize(os);
+        break;
+      default:
+        break;
+    }
+    os.put(EOS);
+  }
+};
 
 void outputToStream(const Table& table, TerminalListBuildInfo& buildInfo,
-                    std::ostream& output) {
-  CppFile file;
-  file.addTopLevelExpression(std::make_unique<CppInclude>("Lexer.parser.hpp"));
-  file.addTopLevelExpression(
-      std::make_unique<CppInclude>("LLTable.parser.hpp"));
-  file.addTopLevelExpression(std::make_unique<CppUsing>("GeneratedParser"));
-  file.addTopLevelExpression(std::make_unique<CppMethod>(
-      "Lexer::Lexer", std::list<std::string>{"std::istream& stream"},
-      "stream(stream)", buildTerminalString(buildInfo)));
-  file.addTopLevelExpression(std::make_unique<CppMethod>(
-      "void", "GeneratedLLTable::generateTable", std::list<std::string>{},
-      "table = " + buildTableString(table) + ";\n"));
-  output << file.output();
+                    BinaryOfstream& output) {
+  BinarySerializer serializer;
+  serializer.add(buildInfo);
+  serializer.add(table.getTable());
+  serializer.serialize(output);
 }
 
 std::unordered_map<std::string, std::string> parseOption(
@@ -174,7 +157,7 @@ int main(int argc, const char** argv) {
   std::ifstream bnfFile(options.at("default"));
   BNFParser parser(BNFLexer::create(bnfFile));
 
-  // Convert TerminalType to size_t to avoid outputting very long string
+  // Convert TerminalType to size_t to avoid outputting long string repeatedly
   std::unordered_map<TerminalType, size_t> terminalMap;
   std::list<TerminalType> terminalList;
   std::list<Production> productionList;
@@ -193,7 +176,7 @@ int main(int argc, const char** argv) {
       } else if (symbol.type == BNFParser::Symbol::NonTerminal)
         right.emplace_back(symbol.getNonTerminal());
       else
-        right.push_back(Table::end);
+        right.push_back(Table::END);
     }
     productionList.emplace_back(production.left, right);
   }
@@ -201,13 +184,11 @@ int main(int argc, const char** argv) {
 
   std::unordered_map<std::string, size_t> subNonTerminalNameMap;
   Table table("Start", productionList, [&](const std::string& nonTerminal) {
-    return nonTerminal + std::to_string(++subNonTerminalNameMap[nonTerminal]);
+    return nonTerminal + "_" +
+           std::to_string(++subNonTerminalNameMap[nonTerminal]);
   });
 
-  if (options.contains("-o")) {
-    std::ofstream outputFile(options.at("-o"));
-    outputToStream(table, buildInfo, outputFile);
-  } else {
-    outputToStream(table, buildInfo, std::cout);
-  }
+  std::string fileName = options.contains("-o") ? options.at("-o") : "a.bin";
+  BinaryOfstream of(fileName);
+  outputToStream(table, buildInfo, of);
 }

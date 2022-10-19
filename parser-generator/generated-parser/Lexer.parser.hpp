@@ -7,6 +7,7 @@
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -14,11 +15,12 @@
 #include <vector>
 
 #include "Regex.parser.hpp"
+#include "Serializer.parser.hpp"
 #include "Utility.parser.hpp"
 
 namespace GeneratedParser {
 using TokenType = int;
-static inline const TokenType eof = -1;
+static inline const TokenType Eof = -1;
 
 struct Token {
   TokenType type = -1;
@@ -26,6 +28,14 @@ struct Token {
 };
 
 class Lexer {
+ protected:
+  struct Matcher;
+
+ public:
+  friend class Serializer::Serializer<
+      std::vector<std::unique_ptr<Lexer::Matcher>>>;
+  friend class Parser;
+
  protected:
   using Stream = Utility::ForwardBufferedInputStream;
 
@@ -39,10 +49,10 @@ class Lexer {
 
   struct StringMatcher : public Matcher {
    protected:
-    const std::string str;
+    const std::string_view str;
 
    public:
-    explicit StringMatcher(std::string str) : str(std::move(str)){};
+    explicit StringMatcher(const std::string_view str) : str(str){};
 
     [[nodiscard]] bool match(Stream& stream, MatchState&) override {
       for (const char& ch : str) {
@@ -57,7 +67,7 @@ class Lexer {
     const Regex regex;
 
    public:
-    explicit RegexMatcher(const std::string& regexStr)
+    explicit RegexMatcher(const std::string_view& regexStr)
         : regex(Regex(regexStr)){};
 
     [[nodiscard]] bool match(Stream& stream, MatchState&) override {
@@ -72,8 +82,8 @@ class Lexer {
 
    public:
     RegexExcludeMatcher(std::string_view regexStr,
-                        std::vector<size_t>&& excludeList)
-        : regex(Regex(regexStr)), excludeList(excludeList){};
+                        std::vector<size_t> excludeList)
+        : regex(Regex(regexStr)), excludeList(std::move(excludeList)){};
 
     [[nodiscard]] bool match(Stream& stream, MatchState& state) override {
       size_t pos = stream.tellg();
@@ -170,5 +180,51 @@ class Lexer {
   }
 
   [[nodiscard]] const Token& getCurrentToken() const { return currentToken; };
+};
+
+template <>
+class Serializer::Serializer<std::vector<std::unique_ptr<Lexer::Matcher>>>
+    : ISerializer {
+ protected:
+  std::vector<std::unique_ptr<Lexer::Matcher>>& matcherList;
+
+ public:
+  explicit Serializer(std::vector<std::unique_ptr<Lexer::Matcher>>& matcherList)
+      : matcherList(matcherList) {}
+
+  void deserialize(BinaryIfstream& stream) override {
+    matcherList.resize(stream.get());
+    size_t i = 0;
+    while (stream.peek() != EOS) {
+      BinaryIType type = stream.get();
+      switch (type) {
+        case 0: {
+          std::string_view sv;
+          Serializer<std::string_view>(sv).deserialize(stream);
+          matcherList[i++] = std::make_unique<Lexer::StringMatcher>(sv);
+          break;
+        }
+        case 1: {
+          std::string_view sv;
+          Serializer<std::string_view>(sv).deserialize(stream);
+          matcherList[i++] = std::make_unique<Lexer::RegexMatcher>(sv);
+          break;
+        }
+        case 2: {
+          std::string_view regex;
+          Serializer<std::string_view>(regex).deserialize(stream);
+          std::vector<size_t> excludeList;
+          Serializer<std::vector<size_t>>(excludeList).deserialize(stream);
+          matcherList[i++] =
+              std::make_unique<Lexer::RegexExcludeMatcher>(regex, excludeList);
+          break;
+        }
+        default:
+          throw std::runtime_error("Unknown matcher type");
+      }
+      stream.get();  // Eat symbol's EOS
+    }
+    stream.get();
+  };
 };
 }  // namespace GeneratedParser

@@ -5,15 +5,16 @@
 
 #include "LLTable.parser.hpp"
 #include "Lexer.parser.hpp"
+#include "Serializer.parser.hpp"
 
 namespace GeneratedParser {
 using Symbol = GeneratedLLTable::Symbol;
 
 class Parser {
  protected:
-  const std::unique_ptr<Lexer> lexer;
+  std::unique_ptr<Lexer> lexer;
 
-  const GeneratedLLTable table;
+  GeneratedLLTable table;
 
   struct SymbolNode {
     const Symbol symbol;
@@ -36,24 +37,29 @@ class Parser {
   };
 
  public:
-  explicit Parser(std::unique_ptr<Lexer> lexer) : lexer(std::move(lexer)){};
-
-  [[nodiscard]] virtual inline bool isEof(const Token& token) const {
-    return token.type == eof;
+  explicit Parser(std::unique_ptr<Lexer> lexer,
+                  Serializer::BinaryDeserializer deserializer)
+      : lexer(std::move(lexer)) {
+    deserializer.deserialize(this->lexer->matcherList);
+    deserializer.deserialize(table.table);
   }
 
-  SymbolNode parseExpression() const noexcept(false) {
+  [[nodiscard]] virtual inline bool isEof(const Token& token) const {
+    return token.type == Eof;
+  }
+
+  SymbolNode parseExpression() noexcept(false) {
     // Construct tree
     std::list<SymbolNode*> epsilonNodeList;
     SymbolNode root{table.getStart()};
-    SymbolNode end{GeneratedLLTable::end};
+    SymbolNode end{GeneratedLLTable::END};
     std::stack<SymbolNode*> stack({&end, &root});
     const Token& currentToken = lexer->getCurrentToken();
     lexer->readNextTokenExpect(
         table.getCandidate(root.symbol.getNonTerminal()));
     while (!stack.empty()) {
       SymbolNode& topSymbolNode = *stack.top();
-      const Symbol& symbol = isEof(currentToken) ? GeneratedLLTable::end
+      const Symbol& symbol = isEof(currentToken) ? GeneratedLLTable::END
                                                  : Symbol(currentToken.type);
 
       if (topSymbolNode.symbol.type != Symbol::NonTerminal) {

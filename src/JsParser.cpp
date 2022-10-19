@@ -1,10 +1,18 @@
 #include "JsParser.hpp"
 
 #include "Exception.hpp"
+#include "Serializer.parser.hpp"
 #include "Utility.hpp"
 
 using namespace JsCompiler;
 using namespace GeneratedParser;
+using namespace Serializer;
+
+extern const BinaryIType js_ebnf[];
+
+JsParser::JsParser(std::unique_ptr<Lexer> lexer)
+    : Parser(std::move(lexer),
+             BinaryDeserializer::create<ArrayStream>(js_ebnf)){};
 
 std::unique_ptr<Expression> JsParser::parseExpression() {
   const auto& root = Parser::parseExpression();
@@ -21,14 +29,14 @@ std::unique_ptr<Expression> JsParser::parseExpression() {
     }
   }
 
-  std::queue<std::unique_ptr<Expression> > expressionQueue;
+  std::queue<std::unique_ptr<Expression>> expressionQueue;
   while (!postOrderStack.empty()) {
     const SymbolNode& node = *postOrderStack.top();
     postOrderStack.pop();
     if (node.symbol.type == Symbol::Terminal) {
       continue;
     }
-    const std::string& nonTerminal = node.symbol.getNonTerminal();
+    const std::string_view& nonTerminal = node.symbol.getNonTerminal();
     switch (Utility::hash(nonTerminal)) {
       case Utility::hash("SingleLineCommentChars"):
       case Utility::hash("MultiLineCommentChars"):

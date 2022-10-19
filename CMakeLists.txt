@@ -9,17 +9,20 @@ set(${PROJECT_NAME}_ENTRY "src/Main.cpp")
 include(cmake/IWYU.cmake)
 
 # Generate parser
-set(parser-generator_DISABLE_TESTS true)
+set(parser-generator_DISABLE_TESTS false)
 add_subdirectory(parser-generator EXCLUDE_FROM_ALL)
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/Parser.cpp
-  COMMAND parser-generator bnf/js.ebnf -o ${CMAKE_CURRENT_BINARY_DIR}/Parser.cpp
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/js.ebnf.bin
+  COMMAND parser-generator bnf/js.ebnf -o ${CMAKE_CURRENT_BINARY_DIR}/js.ebnf.bin
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   MAIN_DEPENDENCY parser-generator
   DEPENDS bnf/js.ebnf
 )
-include_directories(parser-generator/generated-parser)
-file(GLOB GENERATED_PARSER_HEADER parser-generator/runtime-include/*.hpp)
+include(cmake/bin2c.cmake)
+bin2c(${PROJECT_NAME}-lib ${CMAKE_CURRENT_BINARY_DIR}/js.ebnf.bin js_ebnf)
+file(GLOB GENERATED_PARSER_HEADER parser-generator/generated-parser/*.hpp)
+target_include_directories(${PROJECT_NAME}-lib PRIVATE parser-generator/generated-parser)
+target_precompile_headers(${PROJECT_NAME}-lib PRIVATE ${GENERATED_PARSER_HEADER})
 
 # Link LLVM
 execute_process(COMMAND llvm-config --libs core OUTPUT_VARIABLE LLVM_LIBS)
