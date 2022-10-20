@@ -576,7 +576,7 @@ class Regex {
    protected:
     std::list<std::shared_ptr<Condition>> conditionList;
 
-    CharRangeCondition* charRangeToBeFulfilled = nullptr;
+    std::shared_ptr<CharRangeCondition> charRangeToBeFulfilled = nullptr;
 
    public:
     bool isInverted = false;
@@ -604,17 +604,17 @@ class Regex {
         if (isEscapeSymbol(ch)) return false;
         switch (ch) {
           case '-': {
-            auto* lastCondition = conditionList.back().get();
-            const auto* start =
-                dynamic_cast<const CharCondition*>(lastCondition);
+            const auto lastCondition = conditionList.back();
+            const auto start =
+                std::static_pointer_cast<CharCondition>(lastCondition);
             if (start == nullptr)
               throw std::runtime_error("Previous token must be a char: " +
                                        std::to_string(pos));
             auto charRangeCondition =
-                std::make_unique<CharRangeCondition>(start->value);
-            charRangeToBeFulfilled = charRangeCondition.get();
+                std::make_shared<CharRangeCondition>(start->value);
+            charRangeToBeFulfilled = charRangeCondition;
             conditionList.pop_back();
-            conditionList.push_back(std::move(charRangeCondition));
+            conditionList.push_back(charRangeCondition);
             break;
           }
           case ']':
