@@ -402,9 +402,8 @@ class Regex {
     }
 
     template <class ConditionType>
-    requires std::is_base_of<Condition,
-                             ConditionType>::value struct CustomConditionToken
-        : ConditionAndToken {
+      requires std::is_base_of<Condition, ConditionType>::value
+    struct CustomConditionToken : ConditionAndToken {
      public:
       ConditionType condition;
 

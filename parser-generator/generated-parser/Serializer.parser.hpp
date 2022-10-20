@@ -243,9 +243,8 @@ class BinaryDeserializer {
       : stream(std::move(stream)) {}
 
   template <class StreamType, class... Args>
-  requires std::is_base_of<BinaryIfstream,
-                           StreamType>::value static BinaryDeserializer
-  create(Args&&... args) {
+    requires std::is_base_of<BinaryIfstream, StreamType>::value
+  static BinaryDeserializer create(Args&&... args) {
     return BinaryDeserializer(
         std::make_unique<StreamType>(std::forward<Args>(args)...));
   }
