@@ -12,16 +12,22 @@
 #include <utility>
 
 #include "LLTable.hpp"
+#include "LLTablePasses.hpp"
 #include "Lexer.hpp"
 #include "Parser.hpp"
 #include "Serializer.parser.hpp"
 
-using namespace ParserGenerator;
 using namespace GeneratedParser::Serializer;
 
-using Table = LLTable<std::string, size_t>;
-using Production = Table::Production;
-using Symbol = Table::Symbol;
+using TerminalType = ParserGenerator::TerminalType;
+using BNFParser = ParserGenerator::BNFParser;
+using BNFLexer = ParserGenerator::BNFLexer;
+
+using LLTable = ParserGenerator::LLTable<std::string, size_t>;
+using Production = LLTable::Production;
+using Symbol = LLTable::Symbol;
+
+using LLTablePasses = ParserGenerator::LLTablePasses<std::string, size_t>;
 
 struct TerminalListBuildInfo {
  public:
@@ -63,8 +69,8 @@ class GeneratedParser::Serializer::Serializer<TerminalListBuildInfo>
       : buildInfo(buildInfo) {}
 
   void serialize(BinaryOfstream& os) const override {
-    os.put(buildInfo.terminalList.size());
-    for (auto& item : buildInfo.terminalList) {
+    os.put(static_cast<BinaryOType>(buildInfo.terminalList.size()));
+    for (const auto& item : buildInfo.terminalList) {
       os.put(item.type);
       switch (item.type) {
         case TerminalType::String:
@@ -119,7 +125,7 @@ class GeneratedParser::Serializer::Serializer<Symbol> : public ISerializer {
   }
 };
 
-void outputToStream(const Table& table, TerminalListBuildInfo& buildInfo,
+void outputToStream(const LLTable& table, TerminalListBuildInfo& buildInfo,
                     BinaryOfstream& output) {
   BinarySerializer serializer;
   serializer.add(buildInfo);
@@ -130,10 +136,11 @@ void outputToStream(const Table& table, TerminalListBuildInfo& buildInfo,
 std::unordered_map<std::string, std::string> parseOption(
     int argc, const char** argv,
     std::unordered_map<std::string, std::string>&& defaultValue) {
+  argc--;
+  argv++;
   std::unordered_map<std::string, std::string> options;
   std::string defaultArg = "default";
   std::string& currentSwitch = defaultArg;
-
   for (int i = 0; i < argc; i++) {
     std::string arg = argv[i];
     if (arg.at(0) == '-') {
@@ -143,16 +150,18 @@ std::unordered_map<std::string, std::string> parseOption(
     options[currentSwitch] = arg;
     currentSwitch = defaultArg;
   }
-  defaultValue.merge(options);
-  return defaultValue;
+  for (auto& [key, value] : defaultValue) {
+    if (!options.contains(key)) options.emplace(key, value);
+  }
+  return options;
 }
 
 int main(int argc, const char** argv) {
   std::unordered_map<std::string, std::string> options =
-      parseOption(argc - 1, argv + 1, {});
+      parseOption(argc, argv, {{"-o", "a.bin"}});
 
   if (!options.contains("default"))
-    throw std::runtime_error("No bnf file provided");
+    throw std::runtime_error("No bnf file is provided");
 
   std::ifstream bnfFile(options.at("default"));
   BNFParser parser(BNFLexer::create(bnfFile));
@@ -176,19 +185,25 @@ int main(int argc, const char** argv) {
       } else if (symbol.type == BNFParser::Symbol::NonTerminal)
         right.emplace_back(symbol.getNonTerminal());
       else
-        right.push_back(Table::END);
+        right.push_back(LLTable::END);
     }
     productionList.emplace_back(production.left, right);
   }
   TerminalListBuildInfo buildInfo(productionList, terminalList);
 
   std::unordered_map<std::string, size_t> subNonTerminalNameMap;
-  Table table("Start", productionList, [&](const std::string& nonTerminal) {
+  LLTable table("Start", productionList, [&](const std::string& nonTerminal) {
     return nonTerminal + "_" +
            std::to_string(++subNonTerminalNameMap[nonTerminal]);
   });
+  table.add<LLTablePasses::RemoveUnusedProduction>()
+      .add<LLTablePasses::RemoveRightFirstEndProduction>()
+      .add<LLTablePasses::EliminateLeftRecursion>()
+      .add<LLTablePasses::EliminateBacktracking>()
+      .setFirstSetAnalysisPass<LLTablePasses::BuildFirstSetGraph>()
+      .build();
 
-  std::string fileName = options.contains("-o") ? options.at("-o") : "a.bin";
+  std::string fileName = options.at("-o");
   BinaryOfstream of(fileName);
   outputToStream(table, buildInfo, of);
 }
