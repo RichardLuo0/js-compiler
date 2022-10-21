@@ -44,6 +44,8 @@ class Lexer {
 
   struct MatchState;
   struct Matcher {
+    virtual ~Matcher() = default;
+
     [[nodiscard]] virtual bool match(Stream&, MatchState&) = 0;
   };
 
