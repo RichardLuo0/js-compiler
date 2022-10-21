@@ -1,6 +1,5 @@
 #pragma once
 
-#include <ranges>
 #include <stdexcept>
 
 #include "LLTable.parser.hpp"
@@ -16,22 +15,22 @@ class Parser {
 
   GeneratedLLTable table;
 
-  struct SymbolNode {
+  struct Node {
     const Symbol symbol;
     std::string value;
 
-    SymbolNode* previousNode;
-    std::list<SymbolNode> children;
+    Node* previousNode;
+    std::list<Node> children;
 
-    SymbolNode(Symbol symbol, SymbolNode* previousNode)
-        : symbol(std::move(symbol)), previousNode(previousNode) {}
-    explicit SymbolNode(const Symbol& symbol) : SymbolNode(symbol, nullptr) {}
+    Node(const Symbol& symbol, Node* previousNode)
+        : symbol(symbol), previousNode(previousNode) {}
+    explicit Node(const Symbol& symbol) : Node(symbol, nullptr) {}
 
-    bool operator==(const SymbolNode& another) const {
+    bool operator==(const Node& another) const {
       return symbol == another.symbol;
     }
 
-    bool operator!=(const SymbolNode& another) const {
+    bool operator!=(const Node& another) const {
       return symbol != another.symbol;
     }
   };
@@ -48,32 +47,33 @@ class Parser {
     return token.type == Eof;
   }
 
-  SymbolNode parseExpression() noexcept(false) {
+  Node parseExpression() noexcept(false) {
     // Construct tree
-    std::list<SymbolNode*> epsilonNodeList;
-    SymbolNode root{table.getStart()};
-    SymbolNode end{GeneratedLLTable::END};
-    std::stack<SymbolNode*> stack({&end, &root});
+    std::list<Node*> epsilonNodeList;
+    Node root{table.getStart()};
+    Node end{GeneratedLLTable::END};
+    std::stack<Node*> stack({&end, &root});
     const Token& currentToken = lexer->getCurrentToken();
     lexer->readNextTokenExpect(
         table.getCandidate(root.symbol.getNonTerminal()));
     while (!stack.empty()) {
-      SymbolNode& topSymbolNode = *stack.top();
+      Node& currentNode = *stack.top();
       const Symbol& symbol = isEof(currentToken) ? GeneratedLLTable::END
                                                  : Symbol(currentToken.type);
 
-      if (topSymbolNode.symbol.type != Symbol::NonTerminal) {
-        if (topSymbolNode.symbol == symbol) {
-          topSymbolNode.value = currentToken.value;
+      if (currentNode.symbol.type != Symbol::NonTerminal) {
+        if (currentNode.symbol == symbol) {
+          currentNode.value = currentToken.value;
           stack.pop();
           if (!isEof(currentToken)) {
             if (!stack.empty()) {
-              const auto& topSymbol = stack.top()->symbol;
-              if (topSymbol.type == Symbol::NonTerminal)
+              const auto& currentSymbol = stack.top()->symbol;
+              if (currentSymbol.type == Symbol::NonTerminal)
                 lexer->readNextTokenExpect(
-                    table.getCandidate(topSymbol.getNonTerminal()));
-              else if (topSymbol.type == Symbol::Terminal)
-                lexer->readNextTokenExpect(std::list{topSymbol.getTerminal()});
+                    table.getCandidate(currentSymbol.getNonTerminal()));
+              else if (currentSymbol.type == Symbol::Terminal)
+                lexer->readNextTokenExpect(
+                    std::list{currentSymbol.getTerminal()});
               else
                 lexer->readNextTokenExpectEof();
             } else
@@ -85,23 +85,23 @@ class Parser {
       }
 
       const std::list<Symbol>& children =
-          table.predict(topSymbolNode.symbol, symbol);
+          table.predict(currentNode.symbol, symbol);
       stack.pop();
       if (children.front().type != Symbol::End) {
         for (const auto& symbol : children) {
-          topSymbolNode.children.emplace_back(symbol, &topSymbolNode);
+          currentNode.children.emplace_back(symbol, &currentNode);
         }
-        for (auto& it : std::ranges::reverse_view(topSymbolNode.children)) {
+        for (auto& it : std::ranges::reverse_view(currentNode.children)) {
           stack.push(&it);
         }
       } else
-        epsilonNodeList.push_back(&topSymbolNode);
+        epsilonNodeList.push_back(&currentNode);
     }
 
     // Remove epsilon node
-    for (SymbolNode* node : epsilonNodeList) {
+    for (Node* node : epsilonNodeList) {
       do {
-        SymbolNode* previousNode = node->previousNode;
+        Node* previousNode = node->previousNode;
         previousNode->children.remove(*node);
         node = previousNode;
       } while (node != nullptr && node->children.empty());

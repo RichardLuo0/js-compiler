@@ -16,22 +16,22 @@ JsParser::JsParser(std::unique_ptr<Lexer> lexer)
 
 std::unique_ptr<Expression> JsParser::parseExpression() {
   const auto& root = Parser::parseExpression();
-  std::stack<const SymbolNode*> postOrderStack;
-  std::stack<const SymbolNode*> traverseStack({&root});
+  std::stack<const Node*> postOrderStack;
+  std::stack<const Node*> traverseStack({&root});
   while (!traverseStack.empty()) {
-    const SymbolNode& node = *traverseStack.top();
+    const Node& node = *traverseStack.top();
     traverseStack.pop();
     if (node.symbol.type == Symbol::End) continue;
     if (!node.children.empty() || node.symbol.type == Symbol::Terminal)
       postOrderStack.push(&node);
-    for (const SymbolNode& child : node.children) {
+    for (const Node& child : node.children) {
       traverseStack.push(&child);
     }
   }
 
   std::queue<std::unique_ptr<Expression>> expressionQueue;
   while (!postOrderStack.empty()) {
-    const SymbolNode& node = *postOrderStack.top();
+    const Node& node = *postOrderStack.top();
     postOrderStack.pop();
     if (node.symbol.type == Symbol::Terminal) {
       continue;
