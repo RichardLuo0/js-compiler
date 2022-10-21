@@ -4,8 +4,5 @@ CompileFlags:
 Diagnostics:
   Suppress: [
       # https://github.com/llvm/llvm-project/issues/44178
-      ovl_no_viable_object_call,
-      ovl_no_viable_function_in_call,
-      template_arg_list_constraints_not_satisfied,
-      deduced_class_template_ctor_no_viable,
+      ovl_no_viable_oper,
     ]
