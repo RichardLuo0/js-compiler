@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "Expression.hpp"
 #include "Lexer.parser.hpp"
 
 namespace JsCompiler {
@@ -32,5 +33,11 @@ TEST_F(ParserTest, VariableStatement) {
   stream.str(R"(var a = null)");
   auto expression = parser->parseExpression();
   EXPECT_EQ(dynamic_cast<IdentifierExpression*>(expression.get())->name, "a");
+}
+
+TEST_F(ParserTest, ImportStatement) {
+  stream.str(R"(import "a";)");
+  auto expression = parser->parseExpression();
+  EXPECT_EQ(dynamic_cast<ImportExpression*>(expression.get())->value, "\"a\"");
 }
 }  // namespace JsCompiler

@@ -13,6 +13,18 @@ class Expression {
   void virtual codegen() const = 0;
 };
 
+class ImportExpression : public Expression {
+  FRIEND_TEST(ParserTest, ImportStatement);
+
+ protected:
+  const std::string value;
+
+ public:
+  explicit ImportExpression(std::string value) : value(std::move(value)){};
+
+  void codegen() const override { std::cout << value << std::endl; }
+};
+
 class CommentExpression : public Expression {
   FRIEND_TEST(ParserTest, MultiLineComment);
   FRIEND_TEST(ParserTest, SingleLineComment);
