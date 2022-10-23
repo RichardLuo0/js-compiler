@@ -13,21 +13,14 @@ namespace GeneratedParser {
 class GeneratedLLTable : public LLTableBase<size_t, size_t> {
   friend class Parser;
 
- protected:
-  std::unordered_map<std::string_view, std::list<size_t>> candidateCache;
-
  public:
-  GeneratedLLTable() : LLTable("Start"){};
-
-  const std::list<size_t>& getCandidate(const std::string_view& nonTerminal) {
-    if (!candidateCache.contains(nonTerminal)) {
-      auto& candidateCacheOfNonTerminal = candidateCache[nonTerminal];
-      for (const auto& [symbol, _] : table.at(nonTerminal)) {
-        if (symbol.type == Symbol::Terminal)
-          candidateCacheOfNonTerminal.push_back(symbol.getTerminal());
-      }
-    }
-    return candidateCache.at(nonTerminal);
+  auto getCandidate(const size_t& nonTerminal) {
+    return std::views::keys(table.at(nonTerminal)) |
+           std::views::filter([](const Symbol& symbol) {
+             return symbol.type == Symbol::Terminal;
+           }) |
+           std::views::transform(
+               [](const Symbol& symbol) { return symbol.getTerminal(); });
   }
 
   std::list<Symbol> predict(const Symbol& currentSymbol,

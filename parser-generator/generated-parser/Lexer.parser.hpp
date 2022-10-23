@@ -152,7 +152,7 @@ class Lexer {
   explicit Lexer(std::istream& stream) : stream(stream) {}
 
   template <class Iterable>
-  void readNextTokenExpect(const Iterable& matcherIndexIterable) {
+  void readNextTokenExpect(Iterable matcherIndexIterable) {
     if (stream.peek() == EOF) {
       currentToken = {Eof, ""};
       return;
@@ -206,6 +206,7 @@ class Serializer::Serializer<std::vector<std::unique_ptr<Lexer::Matcher>>>
     matcherList.resize(size);
     size_t i = 0;
     while (stream.peek() != EOS) {
+      stream.get();
       BinaryIType type = stream.get();
       switch (type) {
         case 0: {
