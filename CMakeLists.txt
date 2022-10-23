@@ -36,6 +36,7 @@ add_custom_command(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   MAIN_DEPENDENCY parser-generator
   DEPENDS bnf/js.ebnf
+  BYPRODUCTS ${${PROJECT_NAME}_GENERATED}/NonTerminal.parser.hpp
 )
 include(cmake/bin2c.cmake)
 bin2c(${PROJECT_NAME}-lib ${${PROJECT_NAME}_GENERATED}/js.ebnf.bin js_ebnf)

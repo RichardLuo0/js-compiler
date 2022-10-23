@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD 20)
 add_compile_options(-Wall -Wno-trigraphs -Wfatal-errors)
 add_link_options(-fuse-ld=lld)
 set(${PROJECT_NAME}_ENTRY "src/Main.cpp")
-include(../cmake/IWYU.cmake OPTIONAL)
 
 aux_source_directory(src ${PROJECT_NAME}-SRC)
 remove(${PROJECT_NAME}-SRC ${${PROJECT_NAME}_ENTRY})
@@ -14,7 +13,7 @@ add_library(${PROJECT_NAME}-lib ${${PROJECT_NAME}-SRC})
 target_precompile_headers(
   ${PROJECT_NAME}-lib
   PRIVATE
-  include/LLTable.hpp
+  include/Utility.hpp
 )
 target_include_directories(${PROJECT_NAME}-lib PRIVATE include)
 target_include_directories(${PROJECT_NAME}-lib PUBLIC generated-parser)
