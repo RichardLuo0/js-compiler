@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <fstream>
 #include <list>
 #include <map>
@@ -15,21 +16,30 @@ namespace GeneratedParser::Serializer {
 using BinaryOType = char;
 using BinaryIType = signed char;
 
-class BinaryOfstream : public std::ofstream {
+class BinaryOfStream : public std::ofstream {
  public:
-  explicit BinaryOfstream(const std::string& filename)
+  explicit BinaryOfStream(const std::string& filename)
       : std::ofstream(filename, std::ios::binary) {}
 };
 
-class BinaryIfstream {
+class BinaryIfStream {
  public:
   [[nodiscard]] virtual BinaryIType peek() const = 0;
   virtual BinaryIType get() = 0;
+  template <typename Type>
+  Type read() {
+    Type object;
+    read(reinterpret_cast<BinaryIType*>(&object), sizeof(Type));
+    return object;
+  };
 
   virtual const BinaryIType* current() = 0;
+
+ protected:
+  virtual void read(BinaryIType* object, size_t count) = 0;
 };
 
-class ArrayStream : public BinaryIfstream {
+class ArrayStream : public BinaryIfStream {
  protected:
   const BinaryIType* data;
 
@@ -41,6 +51,12 @@ class ArrayStream : public BinaryIfstream {
   BinaryIType get() override { return *(data++); }
 
   const BinaryIType* current() override { return data; }
+
+ protected:
+  void read(BinaryIType* object, size_t count) override {
+    std::memcpy(object, data, count);
+    data += count;
+  }
 };
 
 class ISerializer {
@@ -50,8 +66,8 @@ class ISerializer {
 
   virtual ~ISerializer() = default;
 
-  virtual void serialize(BinaryOfstream&) const {};
-  virtual void deserialize(BinaryIfstream&){};
+  virtual void serialize(BinaryOfStream&) const {};
+  virtual void deserialize(BinaryIfStream&){};
 };
 
 template <typename ObjectType>
@@ -70,14 +86,12 @@ class Serializer<size_t> : public ISerializer {
   explicit Serializer(const size_t& object)
       : Serializer(const_cast<size_t&>(object)) {}
 
-  void serialize(BinaryOfstream& os) const override {
-    os.put(static_cast<BinaryOType>(object));
-    os.put(EOS);
+  void serialize(BinaryOfStream& os) const override {
+    os.write(reinterpret_cast<char*>(&object), sizeof(object));
   }
 
-  void deserialize(BinaryIfstream& stream) override {
-    object = static_cast<unsigned char>(stream.get());
-    if (stream.get() != EOS) throw std::runtime_error("Incomplete size_t");
+  void deserialize(BinaryIfStream& stream) override {
+    object = stream.read<size_t>();
   }
 };
 
@@ -91,12 +105,12 @@ class StringSerializer : public ISerializer {
   explicit StringSerializer(const StringType& object)
       : StringSerializer(const_cast<StringType&>(object)) {}
 
-  void serialize(BinaryOfstream& os) const override {
-    os << object.data();
+  void serialize(BinaryOfStream& os) const override {
+    os << object;
     os.put(EOS);
   }
 
-  void deserialize(BinaryIfstream& stream) override {
+  void deserialize(BinaryIfStream& stream) override {
     const char* begin = reinterpret_cast<const char*>(stream.current());
     size_t count = 0;
     while (stream.peek() != EOS) {
@@ -164,16 +178,18 @@ class Serializer<std::list<ItemType>> : public ISerializer {
   explicit Serializer(const std::list<ItemType>& object)
       : Serializer(const_cast<std::list<ItemType>&>(object)) {}
 
-  void serialize(BinaryOfstream& os) const override {
-    os.put(object.size());
+  void serialize(BinaryOfStream& os) const override {
+    Serializer<size_t>(object.size()).serialize(os);
     for (auto& item : object) {
       Serializer<ItemType>(item).serialize(os);
     }
     os.put(EOS);
   }
 
-  void deserialize(BinaryIfstream& stream) override {
-    stream.get();  // Eat size, we don't need it in std::list
+  void deserialize(BinaryIfStream& stream) override {
+    // Eat size, we don't need it in std::list
+    size_t size = 0;
+    Serializer<size_t>(size).deserialize(stream);
     while (stream.peek() != EOS) {
       ItemType item;
       Serializer<ItemType>(item).deserialize(stream);
@@ -193,18 +209,21 @@ class Serializer<std::vector<ItemType>> : public ISerializer {
   explicit Serializer(const std::vector<ItemType>& object)
       : Serializer(const_cast<std::vector<ItemType>&>(object)) {}
 
-  void serialize(BinaryOfstream& os) const override {
-    os.put(object.size());
+  void serialize(BinaryOfStream& os) const override {
+    Serializer<size_t>(object.size()).serialize(os);
     for (auto& item : object) {
       Serializer<ItemType>(item).serialize(os);
     }
     os.put(EOS);
   }
 
-  void deserialize(BinaryIfstream& stream) override {
-    object.resize(stream.get());
+  void deserialize(BinaryIfStream& stream) override {
+    size_t size = 0;
+    Serializer<size_t>(size).deserialize(stream);
+    object.resize(size);
     size_t i = 0;
     while (stream.peek() != EOS) {
+      stream.get();
       ItemType item;
       Serializer<ItemType>(item).deserialize(stream);
       object[i++] = item;
@@ -227,7 +246,7 @@ class BinarySerializer {
     serializerList.push_back(std::make_unique<Serializer<ObjectType>>(object));
   }
 
-  void serialize(BinaryOfstream& os) {
+  void serialize(BinaryOfStream& os) {
     for (const auto& serializer : serializerList) {
       serializer->serialize(os);
     }
@@ -236,14 +255,14 @@ class BinarySerializer {
 
 class BinaryDeserializer {
  protected:
-  std::unique_ptr<BinaryIfstream> stream;
+  std::unique_ptr<BinaryIfStream> stream;
 
  public:
-  explicit BinaryDeserializer(std::unique_ptr<BinaryIfstream>&& stream)
+  explicit BinaryDeserializer(std::unique_ptr<BinaryIfStream>&& stream)
       : stream(std::move(stream)) {}
 
   template <class StreamType, class... Args>
-    requires std::is_base_of<BinaryIfstream, StreamType>::value
+    requires std::is_base_of<BinaryIfStream, StreamType>::value
   static BinaryDeserializer create(Args&&... args) {
     return BinaryDeserializer(
         std::make_unique<StreamType>(std::forward<Args>(args)...));

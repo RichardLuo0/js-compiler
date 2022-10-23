@@ -26,8 +26,10 @@ namespace ParserGenerator {
  * must be implemented
  */
 template <typename NonTerminalType, typename TerminalType>
-class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
-  using LLTableBase = GeneratedParser::LLTable<NonTerminalType, TerminalType>;
+class LLTable
+    : public GeneratedParser::LLTableBase<NonTerminalType, TerminalType> {
+  using LLTableBase =
+      GeneratedParser::LLTableBase<NonTerminalType, TerminalType>;
 
  public:
   struct Production;
@@ -101,7 +103,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
   struct GrammarInfo {
     std::list<Production>& grammar;
     const CreateSubNonTerminalType& createSubNonTerminalType;
-    const Symbol& start;
+    const NonTerminalType& start;
   };
 
   template <class AnalysisResultType>
@@ -209,7 +211,7 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
       stack.pop();
       if (followSetMap.contains(work)) continue;
       SymbolSet& followSetOfWork = followSetMap[work];
-      if (work == this->start.getNonTerminal()) {
+      if (work == this->start) {
         followSetOfWork.insert(LLTableBase::END);
         continue;
       }
@@ -223,7 +225,8 @@ class LLTable : public GeneratedParser::LLTable<NonTerminalType, TerminalType> {
             auto nextIt = std::next(it);
             if (nextIt == right.end()) {
               stack.push(production.left);
-              followSetOfWork.insert(Symbol(production.left));
+              followSetOfWork.insert(
+                  Symbol::createNonTerminal(production.left));
               continue;
             }
             const auto& nextSymbol = *nextIt;

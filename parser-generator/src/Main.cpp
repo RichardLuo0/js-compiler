@@ -23,51 +23,60 @@ using TerminalType = ParserGenerator::TerminalType;
 using BNFParser = ParserGenerator::BNFParser;
 using BNFLexer = ParserGenerator::BNFLexer;
 
-using LLTable = ParserGenerator::LLTable<std::string, size_t>;
+using LLTable = ParserGenerator::LLTable<size_t, size_t>;
 using Production = LLTable::Production;
 using Symbol = LLTable::Symbol;
 
-using LLTablePasses = ParserGenerator::LLTablePasses<std::string, size_t>;
+using LLTablePasses = ParserGenerator::LLTablePasses<size_t, size_t>;
 
-struct TerminalListBuildInfo {
- public:
-  const std::list<TerminalType>& terminalList;
+struct BuildInfo {
+  friend BuildInfo transformToSizeTProductionList(
+      const std::list<BNFParser::Production>& grammar);
 
  protected:
-  const std::list<Production> productionList;
-  std::unordered_map<std::string, std::vector<size_t>>
-      nonTerminalToExcludeCache;
+  std::list<Production> grammar;
+  std::list<TerminalType> terminalList;
+  std::unordered_map<std::string, size_t> nonTerminalIndexMap;
+
+  std::unordered_map<size_t, std::list<size_t>> nonTerminalToExcludeCache;
 
  public:
-  explicit TerminalListBuildInfo(std::list<Production> productionList,
-                                 const std::list<TerminalType>& terminalList)
-      : terminalList(terminalList), productionList(std::move(productionList)){};
-
-  const std::vector<size_t>& getOnlyDirectTerminalListFromNonTerminal(
+  const std::list<size_t>& getDirectLeftCornerListOfNonTerminal(
       const std::string& nonTerminal) {
-    if (!nonTerminalToExcludeCache.contains(nonTerminal)) {
-      auto& cache = nonTerminalToExcludeCache[nonTerminal];
-      for (auto p : productionList) {
-        if (p.left == nonTerminal && p.right.size() == 1 &&
+    size_t nonTerminalIndex = nonTerminalIndexMap.at(nonTerminal);
+    if (!nonTerminalToExcludeCache.contains(nonTerminalIndex)) {
+      auto& cache = nonTerminalToExcludeCache[nonTerminalIndex];
+      for (auto p : grammar) {
+        if (p.left == nonTerminalIndex && p.right.size() == 1 &&
             p.right.front().type == Symbol::Terminal) {
           cache.push_back(p.right.front().getTerminal());
         }
       }
     }
-    return nonTerminalToExcludeCache.at(nonTerminal);
+    return nonTerminalToExcludeCache.at(nonTerminalIndex);
+  }
+
+  std::list<Production>& getGrammar() { return grammar; }
+
+  const std::list<TerminalType>& getTerminalList() { return terminalList; }
+
+  const std::unordered_map<std::string, size_t>& getNonTerminalIndexMap() {
+    return nonTerminalIndexMap;
   }
 };
 
 template <>
-class GeneratedParser::Serializer::Serializer<TerminalListBuildInfo>
-    : public ISerializer {
+class GeneratedParser::Serializer::Serializer<BuildInfo> : public ISerializer {
  protected:
-  TerminalListBuildInfo& buildInfo;
+  BuildInfo& buildInfo;
 
  public:
-  explicit Serializer(TerminalListBuildInfo& buildInfo)
-      : buildInfo(buildInfo) {}
+  explicit Serializer(BuildInfo& buildInfo) : buildInfo(buildInfo) {}
 
+  void serialize(BinaryOfStream& os) const override {
+    const auto& terminalList = buildInfo.getTerminalList();
+    Serializer<size_t>(terminalList.size()).serialize(os);
+    for (const auto& item : terminalList) {
   void serialize(BinaryOfstream& os) const override {
     os.put(static_cast<BinaryOType>(buildInfo.terminalList.size()));
     for (const auto& item : buildInfo.terminalList) {
@@ -78,16 +87,18 @@ class GeneratedParser::Serializer::Serializer<TerminalListBuildInfo>
           Serializer<std::string>(item.value).serialize(os);
           break;
         case TerminalType::RegexExclude: {
-          auto terminalSplitIt =
-              std::ranges::split_view(item.value, ' ').begin();
+          std::ranges::split_view terminalSplit(item.value, ' ');
+          auto terminalSplitIt = terminalSplit.begin();
           auto regex = std::string_view{(*terminalSplitIt).begin(),
                                         (*terminalSplitIt).end()};
           Serializer<std::string_view>(regex).serialize(os);
           terminalSplitIt++;
+          if (terminalSplitIt == terminalSplit.end())
+            throw std::runtime_error("Not valid regex exclude expression");
           auto excludeNonTerminal =
               std::string{(*terminalSplitIt).begin(), (*terminalSplitIt).end()};
-          Serializer<std::vector<size_t>>(
-              buildInfo.getOnlyDirectTerminalListFromNonTerminal(
+          Serializer<std::list<size_t>>(
+              buildInfo.getDirectLeftCornerListOfNonTerminal(
                   excludeNonTerminal))
               .serialize(os);
           break;
@@ -95,7 +106,6 @@ class GeneratedParser::Serializer::Serializer<TerminalListBuildInfo>
         default:
           throw std::runtime_error("Unknown terminal");
       }
-      os.put(EOS);
     }
     os.put(EOS);
   }
@@ -109,33 +119,89 @@ class GeneratedParser::Serializer::Serializer<Symbol> : public ISerializer {
  public:
   explicit Serializer(const Symbol& symbol) : symbol(symbol) {}
 
-  void serialize(BinaryOfstream& os) const override {
+  void serialize(BinaryOfStream& os) const override {
     os.put(symbol.type);
     switch (symbol.type) {
       case Symbol::Terminal:
         Serializer<size_t>(symbol.getTerminal()).serialize(os);
         break;
       case Symbol::NonTerminal:
-        Serializer<std::string>(symbol.getNonTerminal()).serialize(os);
+        Serializer<size_t>(symbol.getNonTerminal()).serialize(os);
         break;
       default:
         break;
     }
-    os.put(EOS);
   }
 };
 
-void outputToStream(const LLTable& table, TerminalListBuildInfo& buildInfo,
-                    BinaryOfstream& output) {
+// Transform all LLTable<std::string, TerminalType>::Production to
+// LLTable<size_t, size_t>::Production to reduce the memory cost and avoid
+// string comparison
+BuildInfo transformToSizeTProductionList(
+    const std::list<BNFParser::Production>& grammar) {
+  BuildInfo buildInfo;
+  auto& [transformedGrammar, terminalList, nonTerminalIndexMap, _] = buildInfo;
+
+  auto createNonTerminalIndex = [&](const std::string& nonTerminal) {
+    if (nonTerminalIndexMap.contains(nonTerminal))
+      return nonTerminalIndexMap.at(nonTerminal);
+    size_t newLeft = nonTerminalIndexMap.size();
+    nonTerminalIndexMap.emplace(nonTerminal, newLeft);
+    return newLeft;
+  };
+
+  std::unordered_map<TerminalType, size_t> terminalIndexMap;
+  for (const auto& production : grammar) {
+    size_t newLeft = createNonTerminalIndex(production.left);
+
+    std::list<Symbol> right;
+    for (const auto& symbol : production.right) {
+      if (symbol.type == BNFParser::Symbol::Terminal) {
+        const auto& terminal = symbol.getTerminal();
+        if (terminalIndexMap.contains(terminal))
+          right.emplace_back(Symbol::Terminal, terminalIndexMap.at(terminal));
+        else {
+          size_t index = terminalList.size();
+          right.emplace_back(Symbol::Terminal, index);
+          terminalList.push_back(terminal);
+          terminalIndexMap.emplace(terminal, index);
+        }
+      } else if (symbol.type == BNFParser::Symbol::NonTerminal)
+        right.emplace_back(Symbol::NonTerminal,
+                           createNonTerminalIndex(symbol.getNonTerminal()));
+      else
+        right.push_back(LLTable::END);
+    }
+    transformedGrammar.emplace_back(newLeft, right);
+  }
+  return buildInfo;
+}
+
+void outputToStream(const LLTable& table, BuildInfo& buildInfo,
+                    BinaryOfStream& output) {
   BinarySerializer serializer;
   serializer.add(buildInfo);
+  serializer.add(table.getStart());
   serializer.add(table.getTable());
   serializer.serialize(output);
+}
+
+void outputHeader(
+    const std::unordered_map<std::string, size_t>& nonTerminalIndexMap,
+    const std::string& fileName) {
+  std::ofstream headerFile(fileName);
+  headerFile << "namespace GeneratedParser {" << std::endl;
+  for (const auto& [nonTerminal, index] : nonTerminalIndexMap) {
+    headerFile << "constexpr inline size_t " << nonTerminal << " = " << index
+               << ";" << std::endl;
+  }
+  headerFile << "}";
 }
 
 std::unordered_map<std::string, std::string> parseOption(
     int argc, const char** argv,
     std::unordered_map<std::string, std::string>&& defaultValue) {
+  // Skip first argument
   argc--;
   argv++;
   std::unordered_map<std::string, std::string> options;
@@ -145,10 +211,10 @@ std::unordered_map<std::string, std::string> parseOption(
     std::string arg = argv[i];
     if (arg.at(0) == '-') {
       currentSwitch = arg;
-      continue;
+    } else {
+      options[currentSwitch] = arg;
+      currentSwitch = defaultArg;
     }
-    options[currentSwitch] = arg;
-    currentSwitch = defaultArg;
   }
   for (auto& [key, value] : defaultValue) {
     if (!options.contains(key)) options.emplace(key, value);
@@ -166,44 +232,23 @@ int main(int argc, const char** argv) {
   std::ifstream bnfFile(options.at("default"));
   BNFParser parser(BNFLexer::create(bnfFile));
 
-  // Convert TerminalType to size_t to avoid outputting long string repeatedly
-  std::unordered_map<TerminalType, size_t> terminalMap;
-  std::list<TerminalType> terminalList;
-  std::list<Production> productionList;
-  for (auto& production : parser.parse()) {
-    std::list<Symbol> right;
-    for (auto& symbol : production.right) {
-      if (symbol.type == BNFParser::Symbol::Terminal) {
-        const auto& terminal = symbol.getTerminal();
-        if (!terminalMap.contains(terminal)) {
-          size_t index = terminalList.size();
-          right.emplace_back(index);
-          terminalList.push_back(terminal);
-          terminalMap[terminal] = index;
-        } else
-          right.emplace_back(terminalMap.at(terminal));
-      } else if (symbol.type == BNFParser::Symbol::NonTerminal)
-        right.emplace_back(symbol.getNonTerminal());
-      else
-        right.push_back(LLTable::END);
-    }
-    productionList.emplace_back(production.left, right);
-  }
-  TerminalListBuildInfo buildInfo(productionList, terminalList);
+  BuildInfo buildInfo = transformToSizeTProductionList(parser.parse());
 
-  std::unordered_map<std::string, size_t> subNonTerminalNameMap;
-  LLTable table("Start", productionList, [&](const std::string& nonTerminal) {
-    return nonTerminal + "_" +
-           std::to_string(++subNonTerminalNameMap[nonTerminal]);
-  });
-  table.add<LLTablePasses::RemoveUnusedProduction>()
+  size_t startIndex = buildInfo.getNonTerminalIndexMap().at("Start");
+  size_t index = buildInfo.getNonTerminalIndexMap().size();
+  LLTable table(startIndex, buildInfo.getGrammar(),
+                [&](const size_t&) { return index++; });
+  table.setFirstSetAnalysisPass<LLTablePasses::BuildFirstSetGraph>()
+      .add<LLTablePasses::RemoveUnusedProduction>()
       .add<LLTablePasses::RemoveRightFirstEndProduction>()
       .add<LLTablePasses::EliminateLeftRecursion>()
       .add<LLTablePasses::EliminateBacktracking>()
-      .setFirstSetAnalysisPass<LLTablePasses::BuildFirstSetGraph>()
       .build();
 
   std::string fileName = options.at("-o");
-  BinaryOfstream of(fileName);
+  BinaryOfStream of(fileName);
   outputToStream(table, buildInfo, of);
+
+  if (options.contains("--header"))
+    outputHeader(buildInfo.getNonTerminalIndexMap(), options.at("--header"));
 }

@@ -5,8 +5,9 @@ enable_testing()
 set(CMAKE_CXX_STANDARD 20)
 add_compile_options(-Wall -Wno-trigraphs -Wfatal-errors)
 add_link_options(-fuse-ld=lld)
-set(${PROJECT_NAME}_ENTRY "src/Main.cpp")
 include(cmake/IWYU.cmake)
+set(${PROJECT_NAME}_ENTRY "src/Main.cpp")
+set(${PROJECT_NAME}_GENERATED ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
 # Generate lib
 aux_source_directory(src ${PROJECT_NAME}-SRC)
@@ -30,16 +31,17 @@ target_include_directories(${PROJECT_NAME} PUBLIC $<TARGET_PROPERTY:${PROJECT_NA
 set(parser-generator_DISABLE_TESTS false)
 add_subdirectory(parser-generator EXCLUDE_FROM_ALL)
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/js.ebnf.bin
-  COMMAND parser-generator bnf/js.ebnf -o ${CMAKE_CURRENT_BINARY_DIR}/js.ebnf.bin
+  OUTPUT ${${PROJECT_NAME}_GENERATED}/js.ebnf.bin
+  COMMAND parser-generator bnf/js.ebnf -o ${${PROJECT_NAME}_GENERATED}/js.ebnf.bin --header ${${PROJECT_NAME}_GENERATED}/NonTerminal.parser.hpp
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   MAIN_DEPENDENCY parser-generator
   DEPENDS bnf/js.ebnf
 )
 include(cmake/bin2c.cmake)
-bin2c(${PROJECT_NAME}-lib ${CMAKE_CURRENT_BINARY_DIR}/js.ebnf.bin js_ebnf)
-file(GLOB GENERATED_PARSER_HEADER parser-generator/generated-parser/*.hpp)
+bin2c(${PROJECT_NAME}-lib ${${PROJECT_NAME}_GENERATED}/js.ebnf.bin js_ebnf)
+target_include_directories(${PROJECT_NAME}-lib PRIVATE ${${PROJECT_NAME}_GENERATED})
 target_include_directories(${PROJECT_NAME}-lib PRIVATE parser-generator/generated-parser)
+file(GLOB GENERATED_PARSER_HEADER parser-generator/generated-parser/*.hpp)
 target_precompile_headers(${PROJECT_NAME}-lib PRIVATE ${GENERATED_PARSER_HEADER})
 
 # Link LLVM

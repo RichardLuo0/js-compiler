@@ -200,8 +200,10 @@ class Serializer::Serializer<std::vector<std::unique_ptr<Lexer::Matcher>>>
   explicit Serializer(std::vector<std::unique_ptr<Lexer::Matcher>>& matcherList)
       : matcherList(matcherList) {}
 
-  void deserialize(BinaryIfstream& stream) override {
-    matcherList.resize(stream.get());
+  void deserialize(BinaryIfStream& stream) override {
+    size_t size;
+    Serializer<size_t>(size).deserialize(stream);
+    matcherList.resize(size);
     size_t i = 0;
     while (stream.peek() != EOS) {
       BinaryIType type = stream.get();
@@ -228,9 +230,9 @@ class Serializer::Serializer<std::vector<std::unique_ptr<Lexer::Matcher>>>
           break;
         }
         default:
-          throw std::runtime_error("Unknown matcher type");
+          throw std::runtime_error("Unknow symbol type: " +
+                                   std::to_string(type));
       }
-      stream.get();  // Eat symbol's EOS
     }
     stream.get();
   };

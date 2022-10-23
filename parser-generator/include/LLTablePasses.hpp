@@ -3,7 +3,8 @@
 namespace ParserGenerator {
 template <typename NonTerminalType, typename TerminalType>
 class LLTablePasses {
-  using LLTableBase = GeneratedParser::LLTable<NonTerminalType, TerminalType>;
+  using LLTableBase =
+      GeneratedParser::LLTableBase<NonTerminalType, TerminalType>;
   using LLTable = ParserGenerator::LLTable<NonTerminalType, TerminalType>;
   using Production = typename LLTable::Production;
   using Symbol = typename LLTable::Symbol;
@@ -19,8 +20,9 @@ class LLTablePasses {
     void operator()(GrammarInfo& grammarInfo) override {
       auto& [grammar, _, start] = grammarInfo;
       std::list<Production> optimizedGrammar;
-      std::unordered_set<NonTerminalType> visited{start.getNonTerminal()};
-      std::stack<const Symbol*> traverseStack({&start});
+      std::unordered_set<NonTerminalType> visited{start};
+      const Symbol startSymbol = Symbol::createNonTerminal(start);
+      std::stack<const Symbol*> traverseStack({&startSymbol});
       while (!traverseStack.empty()) {
         const Symbol& symbol = *traverseStack.top();
         traverseStack.pop();
@@ -51,9 +53,9 @@ class LLTablePasses {
       terminalNodeSet.clear();
       for (auto& p : grammar) {
         const NonTerminalType& left = p.left;
-        const Symbol pSymbol(left);
-        if (graphMap.contains(pSymbol)) continue;
-        std::stack<const Symbol*> traverseStack({&pSymbol});
+        const Symbol leftSymbol = Symbol::createNonTerminal(left);
+        if (graphMap.contains(leftSymbol)) continue;
+        std::stack<const Symbol*> traverseStack({&leftSymbol});
         while (!traverseStack.empty()) {
           const Symbol& symbol = *traverseStack.top();
           graphMap[symbol].symbol = symbol;
@@ -169,7 +171,7 @@ class LLTablePasses {
                     newRight.pop_front();
                   else {
                     newRight.pop_front();
-                    newRight.emplace_front(preNonTerminal);
+                    newRight.emplace_front(Symbol::NonTerminal, preNonTerminal);
                   }
                   if (newRight.empty()) newRight.push_back(LLTableBase::END);
                   if (isFirstEdge && isLastEdge) {
@@ -191,13 +193,16 @@ class LLTablePasses {
                     NonTerminalType newLeft = createSubNonTerminal(left);
                     grammar.emplace_back(
                         newLeft,
-                        std::list{edge.to->symbol, Symbol(preNonTerminal)});
-                    grammar.emplace_back(newLeft, std::list{Symbol(left)});
+                        std::list{edge.to->symbol,
+                                  Symbol::createNonTerminal(preNonTerminal)});
+                    grammar.emplace_back(
+                        newLeft, std::list{Symbol::createNonTerminal(left)});
                     Edge& nextEdge = *path.at(currentNode);
                     for (Edge& edge : currentNode->edges) {
                       if (&edge != &nextEdge) {
                         nextEdge.production->right.pop_front();
-                        nextEdge.production->right.emplace_front(newLeft);
+                        nextEdge.production->right.emplace_front(
+                            Symbol::NonTerminal, newLeft);
                       }
                     }
                   }
@@ -208,7 +213,7 @@ class LLTablePasses {
                 for (auto& p : grammar) {
                   if (p.left == edge.production->left) {
                     if (p.isEnd()) continue;
-                    p.right.push_back(Symbol(newLeft));
+                    p.right.push_back(Symbol::createNonTerminal(newLeft));
                   }
                 }
                 edge.production->left = newLeft;
@@ -272,7 +277,8 @@ class LLTablePasses {
           // Share the last production
           const NonTerminalType& left = edges.back()->production->left;
           NonTerminalType newLeft = createSubNonTerminal(left);
-          grammar.push_back({left, {startNode->symbol, Symbol(newLeft)}});
+          grammar.push_back(
+              {left, {startNode->symbol, Symbol::createNonTerminal(newLeft)}});
 
           extractFront(--it, *startNode, newLeft, grammar,
                        createSubNonTerminal);
@@ -300,7 +306,7 @@ class LLTablePasses {
               newRight.pop_front();
             else {
               newRight.pop_front();
-              newRight.emplace_front(preNonTerminal);
+              newRight.emplace_front(Symbol::NonTerminal, preNonTerminal);
             }
             if (newRight.empty()) newRight.push_back(LLTableBase::END);
             if (isFirstEdge && isLastEdge) {
@@ -321,13 +327,17 @@ class LLTablePasses {
             it++;
             if (!isLastEdge && edge->to->edges.size() > 1) {
               NonTerminalType newLeft = createSubNonTerminal(left);
-              grammar.emplace_back(newLeft, std::list{extractStartNode.symbol,
-                                                      Symbol(preNonTerminal)});
-              grammar.emplace_back(newLeft, std::list{Symbol(left)});
+              grammar.emplace_back(
+                  newLeft,
+                  std::list{extractStartNode.symbol,
+                            Symbol::createNonTerminal(preNonTerminal)});
+              grammar.emplace_back(newLeft,
+                                   std::list{Symbol::createNonTerminal(left)});
               for (Edge& edge : edge->to->edges) {
                 if (&edge != *it) {
                   edge.production->right.pop_front();
-                  edge.production->right.emplace_front(newLeft);
+                  edge.production->right.emplace_front(Symbol::NonTerminal,
+                                                       newLeft);
                 }
               }
             }

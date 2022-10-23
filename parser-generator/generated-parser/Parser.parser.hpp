@@ -40,6 +40,7 @@ class Parser {
                   Serializer::BinaryDeserializer deserializer)
       : lexer(std::move(lexer)) {
     deserializer.deserialize(this->lexer->matcherList);
+    deserializer.deserialize(table.start);
     deserializer.deserialize(table.table);
   }
 
@@ -50,7 +51,7 @@ class Parser {
   Node parseExpression() noexcept(false) {
     // Construct tree
     std::list<Node*> epsilonNodeList;
-    Node root{table.getStart()};
+    Node root{Symbol::createNonTerminal(table.getStart())};
     Node end{GeneratedLLTable::END};
     std::stack<Node*> stack({&end, &root});
     const Token& currentToken = lexer->getCurrentToken();
@@ -58,8 +59,9 @@ class Parser {
         table.getCandidate(root.symbol.getNonTerminal()));
     while (!stack.empty()) {
       Node& currentNode = *stack.top();
-      const Symbol& symbol = isEof(currentToken) ? GeneratedLLTable::END
-                                                 : Symbol(currentToken.type);
+      const Symbol& symbol = isEof(currentToken)
+                                 ? GeneratedLLTable::END
+                                 : Symbol::createTerminal(currentToken.type);
 
       if (currentNode.symbol.type != Symbol::NonTerminal) {
         if (currentNode.symbol == symbol) {
