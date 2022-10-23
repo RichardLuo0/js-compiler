@@ -77,9 +77,7 @@ class GeneratedParser::Serializer::Serializer<BuildInfo> : public ISerializer {
     const auto& terminalList = buildInfo.getTerminalList();
     Serializer<size_t>(terminalList.size()).serialize(os);
     for (const auto& item : terminalList) {
-  void serialize(BinaryOfstream& os) const override {
-    os.put(static_cast<BinaryOType>(buildInfo.terminalList.size()));
-    for (const auto& item : buildInfo.terminalList) {
+      os.put(BOS);
       os.put(item.type);
       switch (item.type) {
         case TerminalType::String:

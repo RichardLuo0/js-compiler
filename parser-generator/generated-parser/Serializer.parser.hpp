@@ -61,8 +61,8 @@ class ArrayStream : public BinaryIfStream {
 
 class ISerializer {
  public:
-  static constexpr inline int EOS = -2;    // End of segment
-  static constexpr inline int SPLIT = -3;  // Split different units
+  static constexpr inline int BOS = -2;  // Begin of segment
+  static constexpr inline int EOS = -3;  // End of segment
 
   virtual ~ISerializer() = default;
 
@@ -148,16 +148,18 @@ class Serializer<std::unordered_map<Key, Value, Args...>> : public ISerializer {
   explicit Serializer(const std::unordered_map<Key, Value, Args...>& object)
       : object(const_cast<std::unordered_map<Key, Value, Args...>&>(object)) {}
 
-  void serialize(BinaryOfstream& os) const override {
+  void serialize(BinaryOfStream& os) const override {
     for (auto& [key, value] : object) {
+      os.put(BOS);
       Serializer<Key>(key).serialize(os);
       Serializer<Value>(value).serialize(os);
     }
     os.put(EOS);
   }
 
-  void deserialize(BinaryIfstream& stream) override {
+  void deserialize(BinaryIfStream& stream) override {
     while (stream.peek() != EOS) {
+      stream.get();
       Key key;
       Serializer<Key>(key).deserialize(stream);
       Value value;
@@ -181,6 +183,7 @@ class Serializer<std::list<ItemType>> : public ISerializer {
   void serialize(BinaryOfStream& os) const override {
     Serializer<size_t>(object.size()).serialize(os);
     for (auto& item : object) {
+      os.put(BOS);
       Serializer<ItemType>(item).serialize(os);
     }
     os.put(EOS);
@@ -191,6 +194,7 @@ class Serializer<std::list<ItemType>> : public ISerializer {
     size_t size = 0;
     Serializer<size_t>(size).deserialize(stream);
     while (stream.peek() != EOS) {
+      stream.get();
       ItemType item;
       Serializer<ItemType>(item).deserialize(stream);
       object.push_back(item);
@@ -212,6 +216,7 @@ class Serializer<std::vector<ItemType>> : public ISerializer {
   void serialize(BinaryOfStream& os) const override {
     Serializer<size_t>(object.size()).serialize(os);
     for (auto& item : object) {
+      os.put(BOS);
       Serializer<ItemType>(item).serialize(os);
     }
     os.put(EOS);
